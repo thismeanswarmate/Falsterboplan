@@ -111,52 +111,12 @@ private fun rowsOf(lights: List<Device>): List<Row> = lights
         listOf(header) + members.sortedBy { it.name.lowercase() }.map { Row.Light(it) }
     }
 
-/** The Lights tab: rooms and lights, timers and schedules, and the CHAOS button pinned below. */
+/** The Lights tab: rooms and lights, then timers and schedules. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LightsTab(state: UiState, vm: MainViewModel) {
     var timerTarget by remember { mutableStateOf<Target?>(null) }
     timerTarget?.let { TimerDialog(it, vm, onDismiss = { timerTarget = null }) }
-
-    var confirmChaos by remember { mutableStateOf(false) }
-    if (confirmChaos) {
-        AlertDialog(
-            onDismissRequest = { confirmChaos = false },
-            title = {
-                Text(
-                    "CHAOS",
-                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 6.sp),
-                    color = Brand.Pink,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Are you sure you want to start chaos mode?",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        "Every light flickers in different colours for ten seconds, then goes back to how it was.",
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            },
-            confirmButton = {
-                ChaosButton("CHAOS", enabled = true, modifier = Modifier.fillMaxWidth()) {
-                    confirmChaos = false
-                    vm.startChaos()
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmChaos = false }, modifier = Modifier.fillMaxWidth()) { Text("No, keep it calm") }
-            },
-        )
-    }
 
     Column(Modifier.fillMaxSize()) {
         PullToRefreshBox(
@@ -210,30 +170,6 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
                 }
             }
         }
-        ChaosButton(
-            text = if (state.chaos) "CHAOS…" else "CHAOS",
-            enabled = !state.chaos && state.lights.any { it.isReachable },
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp).fillMaxWidth(),
-            onClick = { confirmChaos = true },
-        )
-    }
-}
-
-@Composable
-private fun ChaosButton(text: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Brand.Pink,
-            contentColor = Color.White,
-            disabledContainerColor = Brand.Rose,
-            disabledContentColor = Color.White,
-        ),
-        shape = RoundedCornerShape(24.dp),
-        modifier = modifier.height(72.dp),
-    ) {
-        Text(text, fontFamily = Fraunces, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = 8.sp)
     }
 }
 

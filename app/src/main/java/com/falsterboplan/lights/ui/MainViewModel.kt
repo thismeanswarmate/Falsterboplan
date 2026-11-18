@@ -64,7 +64,6 @@ data class UiState(
     val loading: Boolean = false,
     val timers: List<LightTimer> = emptyList(),
     val schedules: List<Scene> = emptyList(),
-    val chaos: Boolean = false,
     val addLamp: AddLamp = AddLamp.Idle,
     val error: String? = null,
 )
@@ -144,7 +143,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun forgetHub() {
         liveJob?.cancel()
-        chaosJob?.cancel()
         timerStore.all().forEach { TimerScheduler.cancel(getApplication(), it.id) }
         timerStore.clear()
         // Schedules stay on the hub (they belong to the home, not this phone); we just stop tracking them.
@@ -199,7 +197,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     timers = timerStore.all().filter { t -> t.atMillis > now - 60_000 },
                 )
             }
-            if (!_state.value.chaos) WidgetUpdater.push(getApplication(), WidgetSnapshot.of(lights))
+            WidgetUpdater.push(getApplication(), WidgetSnapshot.of(lights))
             loadSchedules(c)
         } catch (e: CancellationException) {
             throw e
@@ -373,75 +371,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun stopAddLamp() {
         addLampJob?.cancel()
         _state.update { it.copy(addLamp = AddLamp.Idle) }
-    }
-
-    // ---- Chaos ---------------------------------------------------------
-
-    private var chaosJob: Job? = null
-
-    /** Ten seconds of every light changing at random, then everything goes back to how it was. */
-    fun startChaos() {
-        val c = client ?: return
-        if (_state.value.chaos) return
-        val before = _state.value.lights.filter { it.isReachable }
-        if (before.isEmpty()) return
-        chaosJob = viewModelScope.launch {
-            _state.update { it.copy(chaos = true) }
-            try {
-                each(before.filter { !it.attributes.isOn }) { c.setDevice(it.id, buildJsonObject { put("isOn", true) }) }
-                val end = System.currentTimeMillis() + 10_000
-                var tick = 0
-                while (System.currentTimeMillis() < end) {
-                    val started = System.currentTimeMillis()
-                    val step = tick++
-                    each(before) { c.setDevice(it.id, chaosAttributes(it, step)) }
-                    // At most two changes a second: lively, but below the rate that is risky for
-                    // people with photosensitive epilepsy, and gentle on the Zigbee network.
-                    delay((500 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
-                }
-            } finally {
-                withContext(NonCancellable) {
-                    each(before) { restore(c, it) }
-                    _state.update { it.copy(chaos = false) }
-                    load(c, showSpinner = false)
-                }
-            }
-        }
-    }
-
-    private suspend fun each(lights: List<Device>, block: suspend (Device) -> Unit) = coroutineScope {
-        lights.map { async { runCatching { block(it) } } }.awaitAll()
-    }
-
-    private fun chaosAttributes(light: Device, step: Int): JsonObject = buildJsonObject {
-        when {
-            light.canSetColor -> {
-                put("colorHue", Random.nextInt(360).toDouble())
-                put("colorSaturation", 1.0)
-            }
-            light.canSetTemperature -> {
-                val range = light.temperatureRange
-                put("colorTemperature", if (Random.nextBoolean()) range.first else range.last)
-            }
-            light.canDim -> put("lightLevel", if (Random.nextBoolean()) 100 else Random.nextInt(1, 30))
-            else -> put("isOn", (step + light.id.hashCode()) % 2 == 0)
-        }
-    }
-
-    private suspend fun restore(c: DirigeraClient, light: Device) {
-        val a = light.attributes
-        if (light.canSetColor && a.colorMode == "color" && a.colorHue != null) {
-            c.setDevice(light.id, buildJsonObject {
-                put("colorHue", a.colorHue)
-                put("colorSaturation", a.colorSaturation ?: 1.0)
-            })
-        } else if (light.canSetTemperature && a.colorTemperature != null) {
-            c.setDevice(light.id, buildJsonObject { put("colorTemperature", a.colorTemperature) })
-        }
-        if (light.canDim && a.lightLevel != null) {
-            c.setDevice(light.id, buildJsonObject { put("lightLevel", a.lightLevel) })
-        }
-        c.setDevice(light.id, buildJsonObject { put("isOn", a.isOn) })
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }

@@ -21,7 +21,6 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
 - **To buy** tab: a shopping list with High/Medium/Low priority; tick items off when bought.
   Kept on the phone
 - **Home screen widget**: a switch per room
-- **CHAOS**: ten seconds of every light changing at random, then everything is put back
 
 ## Build
 
