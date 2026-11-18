@@ -157,44 +157,58 @@ class DirigeraClient(
         }
     }
 
-    /** Creates a scene the hub runs by itself at [time] ("HH:MM") on [days]. Returns its id. */
-    suspend fun createSchedule(name: String, on: Boolean, time: String, days: List<String>, lightIds: List<String>): String {
+    /**
+     * Creates a scene ([id] null) or replaces an existing one. [actions] pairs a light's id with
+     * the attributes to set on it. Returns the scene's id.
+     */
+    suspend fun saveScene(
+        id: String?,
+        name: String,
+        icon: String,
+        triggers: List<JsonObject>,
+        actions: List<Pair<String, JsonObject>>,
+    ): String {
         // The community libraries disagree on which key names the target device, so try both.
         fun body(deviceKey: String) = buildJsonObject {
             putJsonObject("info") {
                 put("name", name)
-                put("icon", if (on) "scenes_wake_up" else "scenes_moon")
+                put("icon", icon)
             }
             put("type", "userScene")
-            putJsonArray("triggers") {
-                addJsonObject {
-                    put("type", "time")
-                    put("disabled", false)
-                    putJsonObject("trigger") {
-                        putJsonArray("days") { days.forEach { add(it) } }
-                        put("time", time)
-                    }
-                }
-            }
+            putJsonArray("triggers") { triggers.forEach { add(it) } }
             putJsonArray("actions") {
-                lightIds.forEach { id ->
+                actions.forEach { (lightId, attributes) ->
                     addJsonObject {
                         put("type", "device")
                         put("enabled", true)
-                        put(deviceKey, id)
-                        putJsonObject("attributes") { put("isOn", on) }
+                        put(deviceKey, lightId)
+                        put("attributes", attributes)
                     }
                 }
             }
         }.toString().toRequestBody(JSON)
 
+        suspend fun send(deviceKey: String): String {
+            val request = authed(url(if (id == null) "scenes" else "scenes/$id"))
+            return call((if (id == null) request.post(body(deviceKey)) else request.put(body(deviceKey))).build())
+        }
+
         val response = try {
-            call(authed(url("scenes")).post(body("deviceId")).build())
+            send("deviceId")
         } catch (e: HubException) {
             if (e.status != 400) throw e
-            call(authed(url("scenes")).post(body("id")).build())
+            send("id")
         }
-        return HubJson.decodeFromString<CreatedId>(response).id
+        return id ?: HubJson.decodeFromString<CreatedId>(response).id
+    }
+
+    /** Creates a scene the hub runs by itself at [time] ("HH:MM") on [days]. Returns its id. */
+    suspend fun createSchedule(name: String, on: Boolean, time: String, days: List<String>, lightIds: List<String>): String =
+        saveScene(null, name, scheduleIcon(on), listOf(timeTrigger(time, days)), lightIds.map { it to onOff(on) })
+
+    /** Runs a scene now, as if it had been tapped in the IKEA app. */
+    suspend fun runScene(sceneId: String) {
+        call(authed(url("scenes/$sceneId/trigger")).post(ByteArray(0).toRequestBody(null)).build())
     }
 
     suspend fun deleteScene(sceneId: String) {
@@ -241,7 +255,7 @@ class DirigeraClient(
         http.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw HubException(response.code, "Hub answered ${response.code}: ${body.take(200)}")
+                throw HubException(response.code, "Hubben svarade ${response.code}: ${body.take(200)}")
             }
             body
         }

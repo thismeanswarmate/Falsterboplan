@@ -38,7 +38,7 @@ class WidgetSnapshotTest {
         assertEquals(4000, room.coolK)
         assertTrue(room.hasColor)
 
-        assertEquals("Other lights", other.name)
+        assertEquals("Övriga lampor", other.name)
         assertEquals(WidgetRoom.OTHER, other.key)
         assertFalse(other.anyOn)
         assertNull(other.level)

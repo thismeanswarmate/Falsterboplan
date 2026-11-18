@@ -27,7 +27,7 @@ class PinningTrustManager(
             onUnpinned(pin)
         } else if (expected != pin) {
             throw CertificateException(
-                "The hub's identity has changed since pairing. Forget the hub and pair again if you trust this network.",
+                "Hubbens identitet har ändrats sedan anslutningen. Glöm hubben och anslut igen om du litar på nätverket.",
             )
         }
     }

@@ -116,7 +116,7 @@ data class WidgetSnapshot(val paired: Boolean, val rooms: List<WidgetRoom> = emp
             val hasRange = warm != null && cool != null && warm < cool
             return WidgetRoom(
                 id = roomId,
-                name = members.first().room?.name?.ifBlank { null } ?: "Other lights",
+                name = members.first().room?.name?.ifBlank { null } ?: "Övriga lampor",
                 lightIds = members.map { it.id },
                 anyOn = members.any { it.attributes.isOn },
                 level = if (members.any { it.canDim }) levels.takeIf { it.isNotEmpty() }?.average()?.toInt() ?: 100 else null,
@@ -141,7 +141,7 @@ private const val TAB_LIGHTS = "lights"
 private const val TAB_BUY = "buy"
 
 /** Colour swatches offered in the widget: name, hue in degrees. */
-private val HUES = listOf("Pink" to 340, "Orange" to 30, "Green" to 120, "Blue" to 215, "Purple" to 275)
+private val HUES = listOf("Rosa" to 340, "Orange" to 30, "Grön" to 120, "Blå" to 215, "Lila" to 275)
 
 object WidgetUpdater {
     val SNAPSHOT = stringPreferencesKey("snapshot")
@@ -205,16 +205,16 @@ private fun Content(snapshot: WidgetSnapshot?, tab: String, expanded: String?, t
         Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Image(
                 provider = ImageProvider(R.drawable.house),
-                contentDescription = "Open Falsterboplan",
+                contentDescription = "Öppna Falsterboplan",
                 modifier = GlanceModifier.size(36.dp).clickable(openApp),
             )
-            TabLabel("Lights", selected = tab == TAB_LIGHTS, target = TAB_LIGHTS)
-            TabLabel(if (toBuy.isEmpty()) "To buy" else "To buy (${toBuy.size})", selected = tab == TAB_BUY, target = TAB_BUY)
+            TabLabel("Lampor", selected = tab == TAB_LIGHTS, target = TAB_LIGHTS)
+            TabLabel(if (toBuy.isEmpty()) "Att köpa" else "Att köpa (${toBuy.size})", selected = tab == TAB_BUY, target = TAB_BUY)
             Spacer(GlanceModifier.defaultWeight())
             if (tab == TAB_LIGHTS) {
                 Image(
                     provider = ImageProvider(R.drawable.ic_refresh),
-                    contentDescription = "Refresh",
+                    contentDescription = "Uppdatera",
                     colorFilter = ColorFilter.tint(ColorProvider(Ink)),
                     modifier = GlanceModifier.size(32.dp).padding(4.dp).clickable(actionRunCallback<RefreshAction>()),
                 )
@@ -239,10 +239,10 @@ private fun TabLabel(label: String, selected: Boolean, target: String) {
 @Composable
 private fun Lights(snapshot: WidgetSnapshot?, expanded: String?, openApp: Action) {
     when {
-        snapshot == null -> Text("Loading…", style = text(14, InkSoft))
+        snapshot == null -> Text("Laddar…", style = text(14, InkSoft))
         !snapshot.paired ->
-            Text("Open the app to connect your hub.", style = text(14, InkSoft), modifier = GlanceModifier.clickable(openApp))
-        snapshot.rooms.isEmpty() -> Text("No lights found.", style = text(14, InkSoft))
+            Text("Öppna appen för att ansluta hubben.", style = text(14, InkSoft), modifier = GlanceModifier.clickable(openApp))
+        snapshot.rooms.isEmpty() -> Text("Inga lampor hittades.", style = text(14, InkSoft))
         else -> LazyColumn {
             items(snapshot.rooms, itemId = { it.key.hashCode().toLong() }) { room -> RoomItem(room, open = expanded == room.key) }
         }
@@ -261,13 +261,13 @@ private fun RoomItem(room: WidgetRoom, open: Boolean) {
                 Column(GlanceModifier.defaultWeight()) {
                     Text(room.name, maxLines = 1, style = text(16, bold = true))
                     Text(
-                        if (!room.anyOn) "Off" else room.level?.let { "On · $it%" } ?: "On",
+                        if (!room.anyOn) "Av" else room.level?.let { "På · $it %" } ?: "På",
                         style = text(12, InkSoft),
                     )
                 }
                 Image(
                     provider = ImageProvider(if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
-                    contentDescription = if (open) "Hide brightness and colour" else "Brightness and colour",
+                    contentDescription = if (open) "Dölj ljusstyrka och färg" else "Ljusstyrka och färg",
                     colorFilter = ColorFilter.tint(ColorProvider(InkSoft)),
                     modifier = GlanceModifier.size(28.dp).padding(2.dp),
                 )
@@ -284,7 +284,7 @@ private fun RoomItem(room: WidgetRoom, open: Boolean) {
             )
         }
         if (open && !room.anyOn) {
-            Text("Turn the room on to change brightness and colour.", style = text(12, InkSoft))
+            Text("Tänd rummet för att ändra ljusstyrka och färg.", style = text(12, InkSoft))
         }
         if (open && room.anyOn) {
             if (room.level != null) BrightnessBar(room, room.level)
@@ -304,7 +304,7 @@ private fun BrightnessBar(room: WidgetRoom, level: Int) {
                     .defaultWeight()
                     .height(36.dp)
                     .padding(horizontal = 2.dp, vertical = 11.dp)
-                    .semantics { contentDescription = "Brightness $value percent" }
+                    .semantics { contentDescription = "Ljusstyrka $value procent" }
                     .clickable(adjust(room, "level", value)),
             ) {
                 Box(
@@ -322,9 +322,9 @@ private fun Swatches(room: WidgetRoom) {
         val warm = room.warmK
         val cool = room.coolK
         if (warm != null && cool != null) {
-            Swatch("Warm white", Color(0xFFFFC870), adjust(room, "temp", warm))
-            Swatch("Neutral white", Color(0xFFFFF3DD), adjust(room, "temp", (warm + cool) / 2))
-            Swatch("Cool white", Color(0xFFBFD9FF), adjust(room, "temp", cool))
+            Swatch("Varmvit", Color(0xFFFFC870), adjust(room, "temp", warm))
+            Swatch("Neutralvit", Color(0xFFFFF3DD), adjust(room, "temp", (warm + cool) / 2))
+            Swatch("Kallvit", Color(0xFFBFD9FF), adjust(room, "temp", cool))
         }
         if (room.hasColor) {
             HUES.forEach { (name, hue) -> Swatch(name, Color.hsv(hue.toFloat(), 0.7f, 1f), adjust(room, "hue", hue)) }
@@ -355,7 +355,7 @@ private fun adjust(room: WidgetRoom, kind: String, value: Int): Action = actionR
 private fun BuyList(toBuy: List<BuyItem>) {
     val add = actionStartActivity<MainActivity>(actionParametersOf(ActionParameters.Key<Int>(MainActivity.EXTRA_TAB) to 1))
     if (toBuy.isEmpty()) {
-        Text("Nothing to buy. Tap to add something.", style = text(14, InkSoft), modifier = GlanceModifier.clickable(add))
+        Text("Inget att köpa. Tryck för att lägga till.", style = text(14, InkSoft), modifier = GlanceModifier.clickable(add))
         return
     }
     LazyColumn {
@@ -364,7 +364,7 @@ private fun BuyList(toBuy: List<BuyItem>) {
                 CheckBox(
                     checked = false,
                     onCheckedChange = actionRunCallback<BoughtAction>(actionParametersOf(BoughtAction.ID to item.id)),
-                    text = item.name,
+                    text = item.title,
                     style = text(15),
                     maxLines = 2,
                     colors = CheckboxDefaults.colors(checkedColor = ColorProvider(Pink), uncheckedColor = ColorProvider(InkSoft)),
@@ -384,7 +384,7 @@ private fun BuyList(toBuy: List<BuyItem>) {
             }
         }
         item {
-            Text("Add something…", style = text(14, InkSoft, bold = true), modifier = GlanceModifier.padding(top = 6.dp, bottom = 4.dp).clickable(add))
+            Text("Lägg till något…", style = text(14, InkSoft, bold = true), modifier = GlanceModifier.padding(top = 6.dp, bottom = 4.dp).clickable(add))
         }
     }
 }

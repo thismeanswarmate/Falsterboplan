@@ -48,8 +48,8 @@ fun RenameDialog(device: Device, vm: MainViewModel, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(device.name) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename light") },
-        text = { NameField(name, { name = it }, "Name") },
+        title = { Text("Byt namn på lampan") },
+        text = { NameField(name, { name = it }, "Namn") },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank(),
@@ -57,9 +57,9 @@ fun RenameDialog(device: Device, vm: MainViewModel, onDismiss: () -> Unit) {
                     vm.renameLight(device, name)
                     onDismiss()
                 },
-            ) { Text("Save") }
+            ) { Text("Spara") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Avbryt") } },
     )
 }
 
@@ -68,8 +68,8 @@ fun RenameRoomDialog(roomId: String, currentName: String, vm: MainViewModel, onD
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename room") },
-        text = { NameField(name, { name = it }, "Room name") },
+        title = { Text("Byt namn på rummet") },
+        text = { NameField(name, { name = it }, "Rummets namn") },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank(),
@@ -77,9 +77,9 @@ fun RenameRoomDialog(roomId: String, currentName: String, vm: MainViewModel, onD
                     vm.renameRoom(roomId, name)
                     onDismiss()
                 },
-            ) { Text("Save") }
+            ) { Text("Spara") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Avbryt") } },
     )
 }
 
@@ -88,8 +88,8 @@ fun NewRoomDialog(vm: MainViewModel, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add a room") },
-        text = { NameField(name, { name = it }, "Room name") },
+        title = { Text("Lägg till rum") },
+        text = { NameField(name, { name = it }, "Rummets namn") },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank(),
@@ -97,9 +97,9 @@ fun NewRoomDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                     vm.addRoom(name)
                     onDismiss()
                 },
-            ) { Text("Add") }
+            ) { Text("Lägg till") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Avbryt") } },
     )
 }
 
@@ -127,12 +127,12 @@ fun MoveDialog(device: Device, rooms: List<Room>, vm: MainViewModel, onDismiss: 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Move ${device.name}") },
+        title = { Text("Flytta ${device.name}") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                sorted.forEach { Option(it.id, it.name.ifBlank { "Room" }) }
-                Option(null, "New room")
-                if (selected == null) NameField(newName, { newName = it }, "Room name")
+                sorted.forEach { Option(it.id, it.name.ifBlank { "Rum" }) }
+                Option(null, "Nytt rum")
+                if (selected == null) NameField(newName, { newName = it }, "Rummets namn")
             }
         },
         confirmButton = {
@@ -143,8 +143,8 @@ fun MoveDialog(device: Device, rooms: List<Room>, vm: MainViewModel, onDismiss: 
                     if (room != null) vm.moveLight(device, room) else vm.addRoom(newName, andMove = device)
                     onDismiss()
                 },
-            ) { Text("Move") }
+            ) { Text("Flytta") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Avbryt") } },
     )
 }

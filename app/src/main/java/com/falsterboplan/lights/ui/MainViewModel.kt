@@ -10,7 +10,20 @@ import com.falsterboplan.lights.data.DirigeraClient
 import com.falsterboplan.lights.data.DiscoveredHub
 import com.falsterboplan.lights.data.Hub
 import com.falsterboplan.lights.data.HubDiscovery
+import com.falsterboplan.lights.data.Moment
 import com.falsterboplan.lights.data.Room
+import com.falsterboplan.lights.data.Routine
+import com.falsterboplan.lights.data.RoutineStore
+import com.falsterboplan.lights.data.Step
+import com.falsterboplan.lights.data.isManual
+import com.falsterboplan.lights.data.lightIds
+import com.falsterboplan.lights.data.onOff
+import com.falsterboplan.lights.data.sceneAttributes
+import com.falsterboplan.lights.data.scheduleIcon
+import com.falsterboplan.lights.data.setRoomOrEach
+import com.falsterboplan.lights.data.trigger
+import com.falsterboplan.lights.data.wakeUpSteps
+import com.falsterboplan.lights.data.windDownSteps
 import com.falsterboplan.lights.data.Scene
 import com.falsterboplan.lights.data.ScheduleStore
 import com.falsterboplan.lights.timer.LightTimer
@@ -66,6 +79,10 @@ data class UiState(
     val loading: Boolean = false,
     val timers: List<LightTimer> = emptyList(),
     val schedules: List<Scene> = emptyList(),
+    /** Scenes that run only when tapped, including ones made in the IKEA app. */
+    val scenes: List<Scene> = emptyList(),
+    /** Wake-ups, wind-downs and away mode: groups of schedules this app made. */
+    val routines: List<Routine> = emptyList(),
     val addLamp: AddLamp = AddLamp.Idle,
     val error: String? = null,
 )
@@ -74,6 +91,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = HubStore(app)
     private val timerStore = TimerStore(app)
     private val scheduleStore = ScheduleStore(app)
+    private val routineStore = RoutineStore(app)
     private val discovery = HubDiscovery(app)
 
     private var hub: PairedHub? = store.load()
@@ -120,8 +138,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         token = pairingClient.exchangeToken(code, verifier, "Falsterboplan (${Build.MODEL})")
                     }
                 }
-                val accessToken = token ?: error("Nobody pressed the button on the hub in time. Try again.")
-                val pin = seenPin ?: error("Could not read the hub's certificate.")
+                val accessToken = token ?: error("Ingen tryckte på hubbens knapp i tid. Försök igen.")
+                val pin = seenPin ?: error("Kunde inte läsa hubbens certifikat.")
 
                 val paired = PairedHub(host, accessToken, pin)
                 store.save(paired)
@@ -149,6 +167,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         timerStore.clear()
         // Schedules stay on the hub (they belong to the home, not this phone); we just stop tracking them.
         scheduleStore.clear()
+        routineStore.clear()
         store.clear()
         hub = null
         client = null
@@ -335,43 +354,175 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(timers = timerStore.all()) }
     }
 
-    // ---- Schedules (stored on and run by the hub) ----------------------
+    // ---- Scenes, schedules and routines (all stored on and run by the hub) ----
 
     private suspend fun loadSchedules(c: DirigeraClient) {
         val mine = scheduleStore.ids()
-        if (mine.isEmpty()) {
-            _state.update { it.copy(schedules = emptyList()) }
-            return
-        }
-        runCatching { c.scenes() }.onSuccess { scenes ->
-            _state.update { it.copy(schedules = scenes.filter { s -> s.id in mine }.sortedBy { s -> s.timeTrigger?.time }) }
+        val routines = routineStore.all()
+        val inRoutine = routines.flatMap { it.sceneIds }.toSet()
+        _state.update { it.copy(routines = routines) }
+        runCatching { c.scenes() }.onSuccess { all ->
+            _state.update { state ->
+                state.copy(
+                    schedules = all.filter { it.id in mine },
+                    scenes = all
+                        .filter { it.isManual && it.id !in mine && it.id !in inRoutine && (it.type.isEmpty() || it.type == "userScene") }
+                        .sortedBy { it.info.name.lowercase() },
+                )
+            }
         }
     }
 
-    fun addSchedule(label: String, lightIds: List<String>, on: Boolean, hour: Int, minute: Int, days: List<String>) {
+    fun allOff() {
         val c = client ?: return
-        if (lightIds.isEmpty() || days.isEmpty()) return
+        val lit = _state.value.lights.filter { it.isReachable && it.attributes.isOn }
+        if (lit.isEmpty()) return
+        updateLocally(lit.map { it.id }.toSet()) { it.copy(isOn = false) }
         send {
-            val time = "%02d:%02d".format(hour, minute)
-            val id = c.createSchedule("$label ${if (on) "on" else "off"} $time", on, time, days, lightIds)
-            scheduleStore.add(id)
-            // Rooms are listed separately so that rooms without lights still show up.
-            runCatching { c.rooms() }.onSuccess { rooms -> _state.update { it.copy(rooms = rooms) } }
+            lit.groupBy { it.room?.id }.forEach { (roomId, members) ->
+                c.setRoomOrEach(roomId, members.map { it.id }, onOff(false))
+            }
+        }
+    }
+
+    /** Saves what the given lights are doing right now as a scene that can be brought back later. */
+    fun saveScene(name: String, lightIds: List<String>) {
+        val c = client ?: return
+        val trimmed = name.trim()
+        val actions = _state.value.lights.filter { it.id in lightIds && it.isReachable }.map { it.id to it.sceneAttributes() }
+        if (trimmed.isEmpty() || actions.isEmpty()) return
+        send {
+            c.saveScene(null, trimmed, "scenes_heart", emptyList(), actions)
             loadSchedules(c)
         }
     }
 
-    fun deleteSchedule(id: String) {
+    fun runScene(scene: Scene) {
         val c = client ?: return
         send {
-            try {
-                c.deleteScene(id)
-            } catch (e: HubException) {
-                if (e.status != 404) throw e // already removed from the IKEA app
-            }
+            c.runScene(scene.id)
+            delay(600)
+            load(c, showSpinner = false)
+        }
+    }
+
+    fun deleteScene(id: String) {
+        val c = client ?: return
+        send {
+            deleteQuietly(c, id)
             scheduleStore.remove(id)
-            // Rooms are listed separately so that rooms without lights still show up.
-            runCatching { c.rooms() }.onSuccess { rooms -> _state.update { it.copy(rooms = rooms) } }
+            loadSchedules(c)
+        }
+    }
+
+    private suspend fun deleteQuietly(c: DirigeraClient, id: String) {
+        try {
+            c.deleteScene(id)
+        } catch (e: HubException) {
+            if (e.status != 404) throw e // already removed in the IKEA app
+        }
+    }
+
+    fun addSchedule(label: String, lightIds: List<String>, on: Boolean, moment: Moment, days: List<String>) {
+        val c = client ?: return
+        if (lightIds.isEmpty() || days.isEmpty()) return
+        send {
+            val name = "$label ${onOffText(on)} ${moment.text()}"
+            val id = c.saveScene(null, name, scheduleIcon(on), listOf(moment.trigger(days)), lightIds.map { it to onOff(on) })
+            scheduleStore.add(id)
+            loadSchedules(c)
+        }
+    }
+
+    /** Changes when an existing schedule runs and what it does; the lights stay the same. */
+    fun updateSchedule(scene: Scene, on: Boolean, moment: Moment, days: List<String>) {
+        val c = client ?: return
+        if (days.isEmpty() || scene.lightIds.isEmpty()) return
+        send {
+            val label = scene.info.name.split(Regex(" (på|av|on|off) "), limit = 2).first()
+            val name = "$label ${onOffText(on)} ${moment.text()}"
+            c.saveScene(scene.id, name, scheduleIcon(on), listOf(moment.trigger(days)), scene.lightIds.map { it to onOff(on) })
+            loadSchedules(c)
+        }
+    }
+
+    fun addWakeUp(label: String, lightIds: List<String>, hour: Int, minute: Int, minutes: Int, days: List<String>) = addRoutine(
+        kind = "wake",
+        label = "Väckning $label",
+        summary = "Fullt ljus %02d:%02d, börjar ${duration(minutes)} innan · ${dayText(days)}".format(hour, minute),
+        icon = "scenes_wake_up",
+        lightIds = lightIds,
+        steps = wakeUpSteps(hour, minute, minutes, days),
+    )
+
+    fun addWindDown(label: String, lightIds: List<String>, hour: Int, minute: Int, minutes: Int, days: List<String>) = addRoutine(
+        kind = "wind",
+        label = "Nedvarvning $label",
+        summary = "Från %02d:%02d, släckt efter ${duration(minutes)} · ${dayText(days)}".format(hour, minute),
+        icon = "scenes_moon",
+        lightIds = lightIds,
+        steps = windDownSteps(hour, minute, minutes, days),
+    )
+
+    /**
+     * Away mode: each chosen room comes on around sunset and goes off late in the evening, at
+     * times that differ between rooms and between alternating days, so the home looks lived in.
+     */
+    fun startAway(roomIds: List<String>) {
+        val rooms = roomIds.mapNotNull { id ->
+            val members = _state.value.lights.filter { it.room?.id == id }.map { it.id }
+            val name = _state.value.rooms.firstOrNull { it.id == id }?.name ?: return@mapNotNull null
+            if (members.isEmpty()) null else Triple(id, name, members)
+        }
+        if (rooms.isEmpty()) return
+        val c = client ?: return
+        send {
+            val ids = mutableListOf<String>()
+            try {
+                for ((_, name, members) in rooms) {
+                    for (days in listOf(listOf("Mon", "Wed", "Fri", "Sun"), listOf("Tue", "Thu", "Sat"))) {
+                        val on = Moment.Sun(sunrise = false, offsetMinutes = Random.nextInt(-10, 41))
+                        val off = Moment.Clock(22 + Random.nextInt(2), Random.nextInt(60)).let {
+                            if (it.hour == 22 && it.minute < 30) it.copy(minute = it.minute + 30) else it
+                        }
+                        ids += c.saveScene(null, "Bortaläge $name på", "scenes_leave_home", listOf(on.trigger(days)), members.map { it to onOff(true) })
+                        ids += c.saveScene(null, "Bortaläge $name av", "scenes_leave_home", listOf(off.trigger(days)), members.map { it to onOff(false) })
+                    }
+                }
+            } catch (e: Exception) {
+                ids.forEach { runCatching { c.deleteScene(it) } }
+                throw e
+            }
+            routineStore.add(Routine(System.currentTimeMillis(), "away", "Bortaläge", rooms.joinToString(", ") { it.second }, ids))
+            loadSchedules(c)
+        }
+    }
+
+    private fun addRoutine(kind: String, label: String, summary: String, icon: String, lightIds: List<String>, steps: List<Step>) {
+        val c = client ?: return
+        if (lightIds.isEmpty()) return
+        send {
+            val ids = mutableListOf<String>()
+            try {
+                steps.forEachIndexed { i, step ->
+                    ids += c.saveScene(null, "$label ${i + 1}/${steps.size}", icon, listOf(step.trigger), lightIds.map { it to step.attributes })
+                }
+            } catch (e: Exception) {
+                // Don't leave half a routine on the hub.
+                ids.forEach { runCatching { c.deleteScene(it) } }
+                throw e
+            }
+            routineStore.add(Routine(System.currentTimeMillis(), kind, label, summary, ids))
+            loadSchedules(c)
+        }
+    }
+
+    fun deleteRoutine(id: Long) {
+        val c = client ?: return
+        val routine = routineStore.all().firstOrNull { it.id == id } ?: return
+        send {
+            routine.sceneIds.forEach { deleteQuietly(c, it) }
+            routineStore.remove(id)
             loadSchedules(c)
         }
     }
@@ -389,7 +540,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val before = c.devices()
                 val gateway = before.firstOrNull { it.type == "gateway" }
-                    ?: error("The hub didn't report itself, so pairing mode can't be switched on.")
+                    ?: error("Hubben hittades inte bland enheterna, så parkopplingsläget kan inte slås på.")
                 val known = before.map { it.id }.toSet()
                 c.setPairingMode(gateway.id, true)
                 var added = emptyList<Device>()
@@ -406,7 +557,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update {
                     it.copy(
                         addLamp = if (added.isEmpty()) {
-                            AddLamp.Failed("No new lamp joined within two minutes.")
+                            AddLamp.Failed("Ingen ny lampa anslöt inom två minuter.")
                         } else {
                             AddLamp.Found(added.map { d -> d.name })
                         },
@@ -429,11 +580,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissError() = _state.update { it.copy(error = null) }
 
     private fun describe(e: Exception): String = when {
-        e is HubException && e.status == 401 -> "The hub no longer accepts this app. Forget the hub and pair again."
-        e is HubException -> e.message ?: "The hub returned an error."
+        e is HubException && e.status == 401 -> "Hubben godkänner inte längre appen. Glöm hubben och anslut igen."
+        e is HubException -> e.message ?: "Hubben svarade med ett fel."
         e is java.net.UnknownHostException || e is java.net.ConnectException ||
             e is java.net.SocketTimeoutException || e is java.net.NoRouteToHostException ->
-            "Can't reach the hub. Check that your phone is on the same Wi-Fi."
+            "Når inte hubben. Kontrollera att mobilen är på samma wifi."
         else -> e.message ?: e.javaClass.simpleName
     }
 }

@@ -41,9 +41,9 @@ import androidx.compose.ui.res.painterResource
 import com.falsterboplan.lights.R
 import androidx.compose.ui.text.style.TextAlign
 import com.falsterboplan.lights.data.Scene
-import com.falsterboplan.lights.data.WEEK
 import com.falsterboplan.lights.timer.LightTimer
-import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.Date
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lightbulb
@@ -83,6 +83,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import com.falsterboplan.lights.data.Device
 import com.falsterboplan.lights.data.Room
+import com.falsterboplan.lights.data.Routine
+import com.falsterboplan.lights.data.days
+import com.falsterboplan.lights.data.lightIds
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.OutlinedButton
 import kotlin.math.roundToInt
 
 private const val NO_ROOM = ""
@@ -106,12 +115,12 @@ private fun rowsOf(lights: List<Device>, rooms: List<Room>): List<Row> {
     rooms.forEach { names[it.id] = it.name }
     lights.forEach { l -> l.room?.let { names.putIfAbsent(it.id, it.name) } }
     val ordered = names.entries.sortedBy { it.value.lowercase() }.map { it.key to it.value } +
-        (if (NO_ROOM in byRoom) listOf(NO_ROOM to "No room") else emptyList())
+        (if (NO_ROOM in byRoom) listOf(NO_ROOM to "Utan rum") else emptyList())
     return ordered.flatMap { (roomId, name) ->
         val members = byRoom[roomId].orEmpty()
         val header = Row.RoomHeader(
             id = roomId,
-            name = name.ifBlank { "Room" },
+            name = name.ifBlank { "Rum" },
             anyOn = members.any { it.attributes.isOn && it.isReachable },
             canSwitch = roomId != NO_ROOM && members.any { it.isReachable },
             lightIds = members.map { it.id },
@@ -130,6 +139,12 @@ private fun rowsOf(lights: List<Device>, rooms: List<Room>): List<Row> {
 fun LightsTab(state: UiState, vm: MainViewModel) {
     var timerTarget by remember { mutableStateOf<Target?>(null) }
     timerTarget?.let { TimerDialog(it, vm, onDismiss = { timerTarget = null }) }
+
+    var editing by remember { mutableStateOf<Scene?>(null) }
+    editing?.let { TimerDialog(Target(it.info.name, it.lightIds), vm, onDismiss = { editing = null }, editing = it) }
+
+    var scenes by remember { mutableStateOf(false) }
+    if (scenes) SceneDialog(state, vm, onDismiss = { scenes = false })
 
     var renaming by remember { mutableStateOf<Device?>(null) }
     renaming?.let { RenameDialog(it, vm, onDismiss = { renaming = null }) }
@@ -152,10 +167,14 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item(key = "top") { QuickRow(state, vm, onScenes = { scenes = true }) }
+                state.routines.filter { it.kind == "away" }.forEach { away ->
+                    item(key = "away") { AwayBanner(away, onStop = { vm.deleteRoutine(away.id) }) }
+                }
                 if (rows.isEmpty() && !state.loading) {
                     item {
                         Text(
-                            "No lights found on this hub. Pull down to refresh.",
+                            "Inga lampor hittades i hubben. Dra nedåt för att uppdatera.",
                             modifier = Modifier.padding(top = 32.dp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -187,23 +206,27 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
                             onMove = { moving = row.device },
                         )
                         is Row.Empty -> Text(
-                            "No lights here yet. Open a light and choose Move to put it in this room.",
+                            "Inga lampor här än. Öppna en lampa och välj Flytta för att lägga den i rummet.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 6.dp),
                         )
                     }
                 }
-                if (state.timers.isNotEmpty() || state.schedules.isNotEmpty()) {
+                val routines = state.routines.filter { it.kind != "away" }
+                if (state.timers.isNotEmpty() || state.schedules.isNotEmpty() || routines.isNotEmpty()) {
                     item(key = "planned") {
                         Text(
-                            "Timers and schedules",
+                            "Timers och scheman",
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.padding(top = 12.dp, start = 4.dp),
                         )
                     }
                     items(state.timers, key = { "t:${it.id}" }) { TimerRow(it, onCancel = { vm.cancelTimer(it.id) }) }
-                    items(state.schedules, key = { "s:${it.id}" }) { ScheduleRow(it, onDelete = { vm.deleteSchedule(it.id) }) }
+                    items(state.schedules, key = { "s:${it.id}" }) {
+                        ScheduleRow(it, onEdit = { editing = it }, onDelete = { vm.deleteScene(it.id) })
+                    }
+                    items(routines, key = { "u:${it.id}" }) { RoutineRow(it, onDelete = { vm.deleteRoutine(it.id) }) }
                 }
             }
         }
@@ -221,7 +244,7 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTime
             IconButton(onClick = onRename) {
                 Icon(
                     Icons.Outlined.Edit,
-                    contentDescription = "Rename ${room.name}",
+                    contentDescription = "Byt namn på ${room.name}",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(20.dp),
                 )
@@ -229,13 +252,13 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTime
         }
         if (room.canSwitch) {
             IconButton(onClick = onTimer) {
-                Icon(Icons.Outlined.Schedule, contentDescription = "Timer or schedule for ${room.name}")
+                Icon(Icons.Outlined.Schedule, contentDescription = "Timer eller schema för ${room.name}")
             }
             Switch(
                 checked = room.anyOn,
                 onCheckedChange = onToggle,
                 colors = brandSwitchColors(),
-                modifier = Modifier.semantics { contentDescription = "All lights in ${room.name}" },
+                modifier = Modifier.semantics { contentDescription = "Alla lampor i ${room.name}" },
             )
         }
     }
@@ -287,10 +310,10 @@ private fun LightCard(
                     Text(device.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         when {
-                            !device.isReachable -> "Unreachable"
-                            !on -> "Off"
+                            !device.isReachable -> "Ingen kontakt"
+                            !on -> "Av"
                             attrs.lightLevel != null -> "${attrs.lightLevel}%" + lookOf(device)
-                            else -> "On"
+                            else -> "På"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -299,7 +322,7 @@ private fun LightCard(
                 if (device.isReachable) {
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (expanded) "Hide controls" else if (hasExtras) "Colour, warmth and timer" else "Timer",
+                        contentDescription = if (expanded) "Dölj reglage" else if (hasExtras) "Färg, värme och timer" else "Timer och namn",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(end = 8.dp),
                     )
@@ -314,11 +337,11 @@ private fun LightCard(
             }
 
             if (device.canDim && on) {
-                SliderLabel("Brightness")
+                SliderLabel("Ljusstyrka")
                 CommitSlider(
                     value = (attrs.lightLevel ?: 100).toFloat(),
                     range = 1f..100f,
-                    label = "Brightness of ${device.name}",
+                    label = "Ljusstyrka för ${device.name}",
                     onCommit = { vm.setLevel(device, it.roundToInt()) },
                 )
             }
@@ -327,7 +350,7 @@ private fun LightCard(
                 Column {
                     if (hasExtras && !on) {
                         Text(
-                            "Turn the light on to change its colour.",
+                            "Tänd lampan för att ändra färgen.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
@@ -335,12 +358,12 @@ private fun LightCard(
                     }
                     if (device.canSetTemperature && on) {
                         val range = device.temperatureRange
-                        SliderLabel("Warmth")
+                        SliderLabel("Värme")
                         CommitSlider(
                             value = (attrs.colorTemperature ?: range.first)
                                 .coerceIn(range.first, range.last).toFloat(),
                             range = range.first.toFloat()..range.last.toFloat(),
-                            label = "Colour temperature of ${device.name}",
+                            label = "Färgtemperatur för ${device.name}",
                             brush = Brush.horizontalGradient(listOf(WARM, Color.White, COOL)),
                             onCommit = { vm.setTemperature(device, it.roundToInt()) },
                         )
@@ -348,19 +371,19 @@ private fun LightCard(
                     if (device.canSetColor && on) {
                         val hue = (attrs.colorHue ?: 0.0).toFloat().coerceIn(0f, 359f)
                         val saturation = (attrs.colorSaturation ?: 1.0).toFloat().coerceIn(0f, 1f)
-                        SliderLabel("Colour")
+                        SliderLabel("Färg")
                         CommitSlider(
                             value = hue,
                             range = 0f..359f,
-                            label = "Colour of ${device.name}",
+                            label = "Färg för ${device.name}",
                             brush = RAINBOW,
                             onCommit = { vm.setColor(device, it.toDouble(), saturation.coerceAtLeast(0.2f).toDouble()) },
                         )
-                        SliderLabel("Intensity")
+                        SliderLabel("Färgstyrka")
                         CommitSlider(
                             value = saturation,
                             range = 0f..1f,
-                            label = "Colour intensity of ${device.name}",
+                            label = "Färgstyrka för ${device.name}",
                             brush = Brush.horizontalGradient(listOf(Color.White, Color.hsv(hue, 1f, 1f))),
                             onCommit = { vm.setColor(device, hue.toDouble(), it.toDouble()) },
                         )
@@ -368,10 +391,10 @@ private fun LightCard(
                     FlowRow(Modifier.padding(top = 4.dp)) {
                         TextButton(onClick = onTimer) {
                             Icon(Icons.Outlined.Schedule, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                            Text("Timer or schedule")
+                            Text("Timer eller schema")
                         }
-                        TextButton(onClick = onRename) { Text("Rename") }
-                        TextButton(onClick = onMove) { Text("Move") }
+                        TextButton(onClick = onRename) { Text("Byt namn") }
+                        TextButton(onClick = onMove) { Text("Flytta") }
                     }
                 }
             }
@@ -381,37 +404,94 @@ private fun LightCard(
 
 @Composable
 private fun TimerRow(timer: LightTimer, onCancel: () -> Unit) {
-    val at = remember(timer.atMillis) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(timer.atMillis)) }
+    val at = remember(timer.atMillis) { SimpleDateFormat("HH:mm", Locale.ROOT).format(Date(timer.atMillis)) }
     Card(Modifier.fillMaxWidth()) {
         ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
-            headlineContent = { Text("${timer.label} ${if (timer.on) "on" else "off"} at $at") },
-            supportingContent = { Text("Timer, from this phone") },
+            headlineContent = { Text("${timer.label} ${onOffText(timer.on)} $at") },
+            supportingContent = { Text("Timer, från den här mobilen") },
             trailingContent = {
-                IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancel timer") }
+                IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Avbryt timern") }
             },
         )
     }
 }
 
 @Composable
-private fun ScheduleRow(scene: Scene, onDelete: () -> Unit) {
-    val days = scene.timeTrigger?.days
-    val daysText = when {
-        days == null || days.size == 7 -> "Every day"
-        days == WEEK.take(5) -> "Weekdays"
-        days == WEEK.drop(5) -> "Weekends"
-        else -> days.joinToString(", ")
-    }
-    Card(Modifier.fillMaxWidth()) {
+private fun ScheduleRow(scene: Scene, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
         ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
             headlineContent = { Text(scene.info.name) },
-            supportingContent = { Text("$daysText, on the hub") },
+            supportingContent = { Text("${dayText(scene.days)} · tryck för att ändra") },
             trailingContent = {
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Close, contentDescription = "Delete schedule") }
+                IconButton(onClick = onDelete) { Icon(Icons.Filled.Close, contentDescription = "Ta bort schemat") }
             },
         )
+    }
+}
+
+@Composable
+private fun RoutineRow(routine: Routine, onDelete: () -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        ListItem(
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+            headlineContent = { Text(routine.label) },
+            supportingContent = { Text("${routine.summary} · i hubben") },
+            trailingContent = {
+                IconButton(onClick = onDelete) { Icon(Icons.Filled.Close, contentDescription = "Ta bort ${routine.label}") }
+            },
+        )
+    }
+}
+
+/** "Everything off" and the saved scenes, in one row that scrolls sideways. */
+@Composable
+private fun QuickRow(state: UiState, vm: MainViewModel, onScenes: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = vm::allOff,
+            enabled = state.lights.any { it.isReachable && it.attributes.isOn },
+            shape = RoundedCornerShape(22.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Brand.Ink, contentColor = Brand.Cream),
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text("Släck allt", style = MaterialTheme.typography.labelLarge) }
+        state.scenes.forEach { scene ->
+            Button(
+                onClick = { vm.runScene(scene) },
+                shape = RoundedCornerShape(22.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Brand.Mint, contentColor = Brand.Ink),
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text(scene.info.name, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+        }
+        OutlinedButton(
+            onClick = onScenes,
+            shape = RoundedCornerShape(22.dp),
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text(if (state.scenes.isEmpty()) "Spara scen" else "Scener", style = MaterialTheme.typography.labelLarge, color = Brand.Ink) }
+    }
+}
+
+@Composable
+private fun AwayBanner(away: Routine, onStop: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Brand.Mint),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Bortaläge är på", style = MaterialTheme.typography.titleMedium)
+                Text("Tänder och släcker på kvällen: ${away.summary}", style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = onStop) { Text("Stäng av", color = Brand.Ink) }
+        }
     }
 }
 
@@ -425,16 +505,16 @@ private fun SliderLabel(text: String) {
     )
 }
 
-/** " · warm", " · colour" and so on, for the line under a light's name. */
+/** " · varm", " · färg" and so on, for the line under a light's name. */
 private fun lookOf(device: Device): String {
     val a = device.attributes
     val temperature = a.colorTemperature
     return when {
-        device.canSetColor && a.colorMode == "color" -> " · colour"
+        device.canSetColor && a.colorMode == "color" -> " · färg"
         device.canSetTemperature && temperature != null -> {
             val range = device.temperatureRange
             val t = (temperature - range.first).toFloat() / (range.last - range.first).coerceAtLeast(1)
-            if (t < 0.35f) " · warm" else if (t > 0.65f) " · cool" else " · neutral"
+            if (t < 0.35f) " · varm" else if (t > 0.65f) " · kall" else " · neutral"
         }
         else -> ""
     }

@@ -152,8 +152,8 @@ class DirigeraClientTest {
 
         val scenes = client.scenes()
         assertEquals(listOf("s1", "s2"), scenes.map { it.id })
-        assertEquals("22:00", scenes[0].timeTrigger?.time)
-        assertNull(scenes[1].timeTrigger)
+        assertEquals(Moment.Clock(22, 0), scenes[0].moment)
+        assertEquals(Moment.Sun(false, 10), scenes[1].moment)
 
         client.deleteScene("s1")
         server.takeRequest()
@@ -203,6 +203,28 @@ class DirigeraClientTest {
         assertEquals("PATCH", move.method)
         assertEquals("/v1/rooms/room-2/devices", move.path)
         assertEquals("""{"deviceIds":["light-1"]}""", move.body.readUtf8())
+    }
+
+    @Test
+    fun saveSceneUpdatesInPlaceAndRunSceneTriggers() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.enqueue(MockResponse().setResponseCode(202))
+
+        val id = client.saveScene(
+            "scene-1", "Kväll", "scenes_moon",
+            listOf(Moment.Sun(false, 30).trigger(listOf("Mon"))),
+            listOf("light-1" to onOff(true)),
+        )
+        assertEquals("scene-1", id)
+        val put = server.takeRequest()
+        assertEquals("PUT", put.method)
+        assertEquals("/v1/scenes/scene-1", put.path)
+        assertTrue(put.body.readUtf8().contains(""""type":"sunset","offset":1800"""))
+
+        client.runScene("scene-1")
+        val run = server.takeRequest()
+        assertEquals("POST", run.method)
+        assertEquals("/v1/scenes/scene-1/trigger", run.path)
     }
 
     @Test

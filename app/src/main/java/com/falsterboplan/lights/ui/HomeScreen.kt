@@ -16,7 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -37,6 +37,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.falsterboplan.lights.R
+import com.falsterboplan.lights.auth.Auth
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 /** The app frame: house banner, the Lights and To buy tabs, and whichever tab is showing. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,55 +82,84 @@ fun HomeScreen(
     var addRoom by remember { mutableStateOf(false) }
     if (addRoom) NewRoomDialog(vm, onDismiss = { addRoom = false })
 
+    var away by remember { mutableStateOf(false) }
+    if (away) AwayDialog(state, vm, onDismiss = { away = false })
+
+    var presence by remember { mutableStateOf(false) }
+    if (presence) PresenceDialog(state, onDismiss = { presence = false })
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var user by remember { mutableStateOf(Auth.userName(context)) }
+    var loginHelp by remember { mutableStateOf(false) }
+    if (loginHelp) {
+        AlertDialog(
+            onDismissRequest = { loginHelp = false },
+            title = { Text("Inloggning är inte inställd") },
+            text = { Text("Den här versionen av appen är byggd utan koppling till ett Firebase-projekt, så det går inte att logga in än.") },
+            confirmButton = { TextButton(onClick = { loginHelp = false }) { Text("OK") } },
+        )
+    }
+
     Scaffold(
         topBar = {
             Column(Modifier.statusBarsPadding()) {
                 Box(Modifier.fillMaxWidth().height(88.dp)) {
                     Image(
                         painterResource(R.drawable.house),
-                        contentDescription = "Home app",
+                        contentDescription = "Falsterboplan",
                         modifier = Modifier.align(Alignment.Center).height(76.dp),
                     )
-                    if (tab == 0 && state.paired) {
-                        Box(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
-                            var menu by remember { mutableStateOf(false) }
-                            IconButton(onClick = { menu = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                    Box(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
+                        var menu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Mer")
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            @Composable
+                            fun Entry(label: String, action: () -> Unit) = DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    menu = false
+                                    action()
+                                },
+                            )
+                            if (state.paired) {
+                                Entry("Lägg till lampa") { addLamp = true }
+                                Entry("Lägg till rum") { addRoom = true }
+                                Entry("Bortaläge") { away = true }
+                                Entry("Hemma och borta") { presence = true }
                             }
-                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("Add a lamp") },
-                                    onClick = {
-                                        menu = false
-                                        addLamp = true
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Add a room") },
-                                    onClick = {
-                                        menu = false
-                                        addRoom = true
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Forget hub") },
-                                    onClick = {
-                                        menu = false
-                                        vm.forgetHub()
-                                    },
-                                )
+                            if (user == null) {
+                                Entry("Logga in med Google") {
+                                    if (Auth.configured(context)) {
+                                        scope.launch {
+                                            Auth.signIn(context)?.let { snackbar.showSnackbar(it) }
+                                            user = Auth.userName(context)
+                                        }
+                                    } else {
+                                        loginHelp = true
+                                    }
+                                }
+                            } else {
+                                Entry("Logga ut ($user)") {
+                                    Auth.signOut(context)
+                                    user = null
+                                }
                             }
+                            if (state.paired) Entry("Glöm hubben") { vm.forgetHub() }
                         }
                     }
                 }
-                PrimaryTabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
-                    listOf("Lights", if (toBuyCount > 0) "To buy ($toBuyCount)" else "To buy").forEachIndexed { index, title ->
+                // Tabs are as wide as their words, so the longest ("Dammsugare") is never cut off on a narrow phone.
+                PrimaryScrollableTabRow(selectedTabIndex = tab, containerColor = Color.Transparent, edgePadding = 8.dp) {
+                    listOf("Lampor", if (toBuyCount > 0) "Att köpa ($toBuyCount)" else "Att köpa").forEachIndexed { index, title ->
                         Tab(
                             selected = tab == index,
                             onClick = { tab = index },
                             selectedContentColor = MaterialTheme.colorScheme.onSurface,
                             unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            text = { Text(title, style = MaterialTheme.typography.titleMedium) },
+                            text = { Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false) },
                         )
                     }
                     // Placeholder for vacuum control; nothing behind it yet.
@@ -134,8 +169,10 @@ fun HomeScreen(
                         enabled = false,
                         text = {
                             Text(
-                                "Vacuum",
-                                style = MaterialTheme.typography.titleMedium,
+                                "Dammsugare",
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                softWrap = false,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
                             )
                         },

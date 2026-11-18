@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Only for the "lights were left on" reminder. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Timers must fire on the minute. USE_EXACT_ALARM is granted automatically on Android 13+. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission
@@ -41,6 +43,14 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/lights_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".presence.PresenceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
         </receiver>
 
         <receiver

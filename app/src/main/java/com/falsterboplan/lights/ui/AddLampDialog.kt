@@ -31,49 +31,49 @@ fun AddLampDialog(state: AddLamp, vm: MainViewModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add a lamp") },
+        title = { Text("Lägg till lampa") },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Lamp without a code", style = MaterialTheme.typography.titleMedium)
+                Text("Lampa utan kod", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "For TRÅDFRI and other lamps that have no QR code. Hold the lamp close to the hub, " +
-                        "then reset it by switching it off and on six times. It dims and brightens when it joins.",
+                    "För TRÅDFRI och andra lampor som saknar QR-kod. Håll lampan nära hubben och " +
+                        "återställ den genom att släcka och tända den sex gånger. Den blinkar till när den ansluter.",
                 )
                 when (state) {
                     AddLamp.Searching -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("  The hub is listening for a new lamp…")
+                        Text("  Hubben lyssnar efter en ny lampa…")
                     }
                     is AddLamp.Found -> Text(
-                        "Added: ${state.names.joinToString()}",
+                        "Tillagd: ${state.names.joinToString()}",
                         color = MaterialTheme.colorScheme.primary,
                     )
                     is AddLamp.Failed -> Text(state.message, color = MaterialTheme.colorScheme.error)
                     AddLamp.Idle -> Unit
                 }
                 if (state == AddLamp.Searching) {
-                    OutlinedButton(onClick = vm::stopAddLamp) { Text("Stop") }
+                    OutlinedButton(onClick = vm::stopAddLamp) { Text("Stoppa") }
                 } else {
                     Button(onClick = vm::startAddLamp) {
-                        Text(if (state == AddLamp.Idle) "Start pairing" else "Try again")
+                        Text(if (state == AddLamp.Idle) "Starta parkoppling" else "Försök igen")
                     }
                 }
 
                 HorizontalDivider()
 
-                Text("Lamp with a QR or number code", style = MaterialTheme.typography.titleMedium)
+                Text("Lampa med QR-kod eller sifferkod", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "KAJPLATS and other newer lamps are added with the code on the lamp or its leaflet. " +
-                        "Only IKEA's own app can pass that code to the hub, so that step happens there. " +
-                        "The lamp shows up here as soon as it's added.",
+                    "KAJPLATS och andra nyare lampor läggs till med koden på lampan eller i foldern. " +
+                        "Bara IKEAs egen app kan skicka koden till hubben, så det steget görs där. " +
+                        "Lampan dyker upp här så fort den är tillagd.",
                 )
-                OutlinedButton(onClick = { openIkeaApp(context) }) { Text("Open IKEA Home smart") }
+                OutlinedButton(onClick = { openIkeaApp(context) }) { Text("Öppna IKEA Home smart") }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Klar") } },
     )
 }
 

@@ -57,7 +57,7 @@ fun SetupContent(state: UiState, vm: MainViewModel) {
             modifier = Modifier.size(104.dp).clip(RoundedCornerShape(24.dp)).align(Alignment.CenterHorizontally),
         )
         Text(
-            "Welcome home",
+            "Välkommen hem",
             style = MaterialTheme.typography.headlineLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
@@ -66,7 +66,7 @@ fun SetupContent(state: UiState, vm: MainViewModel) {
             is Pairing.WaitingForButton -> WaitingCard(pairing.host, onCancel = vm::cancelPairing)
             else -> {
                 Text(
-                    "Make sure your phone is on the same Wi-Fi as your DIRIGERA hub.",
+                    "Se till att mobilen är på samma wifi som din DIRIGERA-hubb.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -83,11 +83,11 @@ fun SetupContent(state: UiState, vm: MainViewModel) {
 
 @Composable
 private fun HubPicker(state: UiState, onPair: (String) -> Unit) {
-    Text("Hubs on this network", style = MaterialTheme.typography.titleMedium)
+    Text("Hubbar i det här nätverket", style = MaterialTheme.typography.titleMedium)
     if (state.discovered.isEmpty()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            Text("  Searching…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("  Söker…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     state.discovered.forEach { hub ->
@@ -101,7 +101,7 @@ private fun HubPicker(state: UiState, onPair: (String) -> Unit) {
     }
 
     Spacer(Modifier.height(8.dp))
-    Text("Or enter the hub's IP address", style = MaterialTheme.typography.titleMedium)
+    Text("Eller ange hubbens IP-adress", style = MaterialTheme.typography.titleMedium)
     var host by rememberSaveable { mutableStateOf("") }
     OutlinedTextField(
         value = host,
@@ -118,7 +118,7 @@ private fun HubPicker(state: UiState, onPair: (String) -> Unit) {
         enabled = host.isNotBlank(),
         shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth().height(56.dp),
-    ) { Text("Connect", style = MaterialTheme.typography.titleMedium) }
+    ) { Text("Anslut", style = MaterialTheme.typography.titleMedium) }
 }
 
 @Composable
@@ -126,12 +126,12 @@ private fun WaitingCard(host: String, onCancel: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CircularProgressIndicator()
-            Text("Press the button on the hub", style = MaterialTheme.typography.titleLarge)
+            Text("Tryck på knappen på hubben", style = MaterialTheme.typography.titleLarge)
             Text(
-                "It's the round action button on the underside of the hub at $host. " +
-                    "You have about a minute.",
+                "Det är den runda knappen på undersidan av hubben på $host. " +
+                    "Du har ungefär en minut på dig.",
             )
-            OutlinedButton(onClick = onCancel) { Text("Cancel") }
+            OutlinedButton(onClick = onCancel) { Text("Avbryt") }
         }
     }
 }

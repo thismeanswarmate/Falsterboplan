@@ -81,8 +81,12 @@ data class SceneInfo(val name: String = "", val icon: String = "")
 data class TriggerDetails(
     /** "Mon".."Sun"; absent means every day. */
     val days: List<String>? = null,
-    /** "HH:MM", hub local time. */
+    /** "HH:MM", hub local time; set on time triggers. */
     val time: String? = null,
+    /** "sunrise" or "sunset"; set on sun triggers. */
+    val type: String? = null,
+    /** Seconds after (or, negative, before) sunrise/sunset. */
+    val offset: Int? = null,
 )
 
 @Serializable
@@ -103,12 +107,11 @@ data class SceneAction(
 @Serializable
 data class Scene(
     val id: String,
+    val type: String = "",
     val info: SceneInfo = SceneInfo(),
     val triggers: List<SceneTrigger> = emptyList(),
     val actions: List<SceneAction> = emptyList(),
-) {
-    val timeTrigger get() = triggers.firstOrNull { it.type == "time" }?.trigger
-}
+)
 
 @Serializable
 data class CreatedId(val id: String)

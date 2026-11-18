@@ -5,25 +5,31 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
 
 ## What it does
 
-- Finds the hub on the network (mDNS), or takes its IP address
-- Pairs by pressing the action button on the underside of the hub
-- Lists lights grouped by room, with a switch per room
-- Per light: on/off and brightness; tap a light for warmth, colour and colour intensity where the
-  bulb supports them
-- Rename lights and rooms, add a room, and move a light to another room
-- Updates live when lights are changed from elsewhere (remotes, the IKEA app)
-- **Timers**: turn a light or a room on/off in N minutes. Fired by the phone, so the phone has to
-  be on the home Wi-Fi when the timer ends
-- **Schedules**: turn a light or a room on/off at a time on chosen weekdays. Stored on the hub as
-  a scene with a time trigger, so they run without the phone (and also show up in the IKEA app)
-- **Add a lamp** (menu): opens the hub's pairing window for lamps that join without a code.
-  Lamps that pair with a QR or number code (Matter, e.g. KAJPLATS) are handed over to the IKEA
-  Home smart app, because no way for a third-party app to pass that code to the hub is known
-- **To buy** tab: a shopping list with High/Medium/Low priority; tick items off when bought.
-  Kept on the phone
-- **Vacuum** tab: a disabled placeholder, nothing behind it yet
-- **Home screen widget**: a Lights tab (switch per room; tap a room for brightness steps and
-  warmth/colour swatches) and a To buy tab (tick items off)
+The app's interface is in Swedish throughout.
+
+**Lights tab (Lampor)**
+- Finds the hub on the network (mDNS) or takes its IP address; pairs with the hub's button
+- Lights grouped by room; per light on/off, brightness, warmth, colour and colour intensity
+- Rename lights and rooms, add a room, move a light to another room, add code-less lamps
+- "Släck allt" turns everything off; scenes save the current look and bring it back with a tap
+- Timers (fired by the phone) and schedules (stored on the hub): at a clock time or relative to
+  sunrise/sunset, on chosen weekdays; schedules can be edited
+- Wake-up and wind-down: five stepped hub schedules that brighten before a time or dim after it
+- Away mode: chosen rooms come on around sunset and go off late, at varying times, run by the hub
+- Home and away: turn lights on when the phone comes home in the evening, and notify if lights
+  were on when it left. "Home" means the hub answers, so no location permission is used
+
+**To buy tab (Att köpa)**: priority, quantity, category and note per item; tick off when bought;
+bought items are remembered as "buy again" suggestions. Stored on the phone.
+
+**Vacuum tab (Dammsugare)**: a disabled placeholder.
+
+**Home screen widget**: lights per room with brightness steps and warmth/colour swatches, and the
+to-buy list.
+
+**Google sign-in** (menu): Firebase Authentication. Put the Firebase project's
+`google-services.json` in `app/` and register the debug key's SHA-1 (below) in the Firebase
+console. Without the file the app builds and the menu entry explains that login isn't set up.
 
 ## Build
 
@@ -35,6 +41,10 @@ Needs JDK 17+ and the Android SDK (platform 36).
 ```
 
 Or open the folder in Android Studio and run it.
+
+Debug builds are signed with `keystore/debug.keystore`, which is kept in the repository so that
+every build installs over the previous one. Its SHA-1 is
+`C6:D4:6B:30:48:36:86:B8:F9:45:7B:77:B9:FE:08:24:AD:15:B5:77`.
 
 ## How it talks to the hub
 

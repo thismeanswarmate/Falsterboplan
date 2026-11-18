@@ -22,4 +22,19 @@ class ShoppingTest {
         val items = listOf(BuyItem(7, "Lamp \"shade\"", Priority.LOW, bought = true))
         assertEquals(items, HubJson.decodeFromString<List<BuyItem>>(HubJson.encodeToString(items)))
     }
+
+    @Test
+    fun categoriesGroupItemsAndHistoryKeepsNewestWithoutRepeats() {
+        val items = listOf(
+            BuyItem(1, "Skruvar", Priority.HIGH),
+            BuyItem(2, "Mjölk", Priority.LOW, category = "Mat"),
+            BuyItem(3, "Glödlampor", Priority.HIGH, quantity = 2, category = "Belysning"),
+            BuyItem(4, "Bröd", Priority.HIGH, category = "Mat"),
+        )
+        assertEquals(listOf("Glödlampor", "Bröd", "Mjölk", "Skruvar"), items.forDisplay().map { it.name })
+        assertEquals("2 × Glödlampor", items[2].title)
+        assertEquals("Mjölk", items[1].title)
+
+        assertEquals(listOf("Bröd", "Mjölk", "Ägg"), listOf("mjölk", "Ägg").remembering(listOf("Bröd", "Mjölk")))
+    }
 }
