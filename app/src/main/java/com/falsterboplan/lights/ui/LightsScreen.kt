@@ -93,7 +93,6 @@ private sealed interface Row {
         val anyOn: Boolean,
         val canSwitch: Boolean,
         val lightIds: List<String>,
-        val onCount: Int,
     ) : Row
     data class Light(val device: Device) : Row
     data class Empty(val roomId: String) : Row
@@ -115,7 +114,6 @@ private fun rowsOf(lights: List<Device>, rooms: List<Room>): List<Row> {
             anyOn = members.any { it.attributes.isOn && it.isReachable },
             canSwitch = roomId != NO_ROOM && members.any { it.isReachable },
             lightIds = members.map { it.id },
-            onCount = members.count { it.attributes.isOn && it.isReachable },
         )
         listOf(header) + if (members.isEmpty()) {
             listOf(Row.Empty(roomId))
@@ -214,13 +212,6 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTime
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(room.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-        if (room.onCount > 0) {
-            Text(
-                "${room.onCount} of ${room.lightIds.size} on",
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.background(Brand.Mint, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
         if (room.canSwitch) {
             IconButton(onClick = onTimer) {
                 Icon(Icons.Outlined.Schedule, contentDescription = "Timer or schedule for ${room.name}")

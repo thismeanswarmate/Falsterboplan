@@ -68,7 +68,6 @@ data class WidgetRoom(
     val name: String,
     val lightIds: List<String>,
     val anyOn: Boolean,
-    val onCount: Int,
 )
 
 @Serializable
@@ -84,7 +83,6 @@ data class WidgetSnapshot(val paired: Boolean, val rooms: List<WidgetRoom> = emp
                         name = members.first().room?.name?.ifBlank { null } ?: "Other lights",
                         lightIds = members.map { it.id },
                         anyOn = members.any { it.attributes.isOn },
-                        onCount = members.count { it.attributes.isOn },
                     )
                 }
                 .sortedWith(compareBy({ it.id == null }, { it.name.lowercase() })),
@@ -181,7 +179,7 @@ private fun Content(snapshot: WidgetSnapshot?) {
                                 style = TextStyle(color = ColorProvider(Ink), fontSize = 16.sp),
                             )
                             Text(
-                                if (room.anyOn) "${room.onCount} of ${room.lightIds.size} on" else "Off",
+                                if (room.anyOn) "On" else "Off",
                                 style = TextStyle(color = ColorProvider(InkSoft), fontSize = 12.sp),
                             )
                         }
@@ -226,7 +224,7 @@ class ToggleRoomAction : ActionCallback {
             prefs[WidgetUpdater.SNAPSHOT] = HubJson.encodeToString(
                 snapshot.copy(
                     rooms = snapshot.rooms.map {
-                        if (it.id == roomId) it.copy(anyOn = on, onCount = if (on) it.lightIds.size else 0) else it
+                        if (it.id == roomId) it.copy(anyOn = on) else it
                     },
                 ),
             )
