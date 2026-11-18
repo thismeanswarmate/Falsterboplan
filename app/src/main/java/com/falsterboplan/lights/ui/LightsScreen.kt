@@ -17,7 +17,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.falsterboplan.lights.data.Scene
+import com.falsterboplan.lights.data.WEEK
+import com.falsterboplan.lights.timer.LightTimer
+import java.text.DateFormat
+import java.util.Date
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material3.Card
@@ -58,7 +79,13 @@ import kotlin.math.roundToInt
 private const val NO_ROOM = ""
 
 private sealed interface Row {
-    data class RoomHeader(val id: String, val name: String, val anyOn: Boolean, val canSwitch: Boolean) : Row
+    data class RoomHeader(
+        val id: String,
+        val name: String,
+        val anyOn: Boolean,
+        val canSwitch: Boolean,
+        val lightIds: List<String>,
+    ) : Row
     data class Light(val device: Device) : Row
 }
 
@@ -72,6 +99,7 @@ private fun rowsOf(lights: List<Device>): List<Row> = lights
             name = members.first().room?.name?.ifBlank { null } ?: "No room",
             anyOn = members.any { it.attributes.isOn && it.isReachable },
             canSwitch = roomId != NO_ROOM && members.any { it.isReachable },
+            lightIds = members.map { it.id },
         )
         listOf(header) + members.sortedBy { it.name.lowercase() }.map { Row.Light(it) }
     }
@@ -87,7 +115,57 @@ fun LightsScreen(state: UiState, vm: MainViewModel) {
         }
     }
 
+    var timerTarget by remember { mutableStateOf<Target?>(null) }
+    timerTarget?.let { TimerDialog(it, vm, onDismiss = { timerTarget = null }) }
+
+    var addLamp by remember { mutableStateOf(false) }
+    if (addLamp) {
+        AddLampDialog(state.addLamp, vm, onDismiss = {
+            addLamp = false
+            vm.stopAddLamp()
+        })
+    }
+
+    var confirmChaos by remember { mutableStateOf(false) }
+    if (confirmChaos) {
+        AlertDialog(
+            onDismissRequest = { confirmChaos = false },
+            title = { Text("CHAOS") },
+            text = { Text("Are you sure you want to start chaos mode?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        confirmChaos = false
+                        vm.startChaos()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CHAOS_RED, contentColor = Color.White),
+                ) { Text("CHAOS", fontWeight = FontWeight.Black) }
+            },
+            dismissButton = { TextButton(onClick = { confirmChaos = false }) { Text("Cancel") } },
+        )
+    }
+
     Scaffold(
+        bottomBar = {
+            Button(
+                onClick = { confirmChaos = true },
+                enabled = !state.chaos && state.lights.any { it.isReachable },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CHAOS_RED,
+                    contentColor = Color.White,
+                    disabledContainerColor = CHAOS_RED.copy(alpha = 0.5f),
+                    disabledContentColor = Color.White,
+                ),
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .fillMaxWidth()
+                    .height(72.dp),
+            ) {
+                Text(if (state.chaos) "CHAOS…" else "CHAOS", fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp)
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text("Lights") },
@@ -97,6 +175,13 @@ fun LightsScreen(state: UiState, vm: MainViewModel) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Add a lamp") },
+                            onClick = {
+                                menu = false
+                                addLamp = true
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text("Forget hub") },
                             onClick = {
@@ -136,9 +221,28 @@ fun LightsScreen(state: UiState, vm: MainViewModel) {
                     contentType = { it is Row.Light },
                 ) { row ->
                     when (row) {
-                        is Row.RoomHeader -> RoomHeader(row, onToggle = { vm.setRoomOn(row.id, it) })
-                        is Row.Light -> LightCard(row.device, vm)
+                        is Row.RoomHeader -> RoomHeader(
+                            row,
+                            onToggle = { vm.setRoomOn(row.id, it) },
+                            onTimer = { timerTarget = Target(row.name, row.lightIds) },
+                        )
+                        is Row.Light -> LightCard(
+                            row.device,
+                            vm,
+                            onTimer = { timerTarget = Target(row.device.name, listOf(row.device.id)) },
+                        )
                     }
+                }
+                if (state.timers.isNotEmpty() || state.schedules.isNotEmpty()) {
+                    item(key = "planned") {
+                        Text(
+                            "Timers and schedules",
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(top = 12.dp, start = 4.dp),
+                        )
+                    }
+                    items(state.timers, key = { "t:${it.id}" }) { TimerRow(it, onCancel = { vm.cancelTimer(it.id) }) }
+                    items(state.schedules, key = { "s:${it.id}" }) { ScheduleRow(it, onDelete = { vm.deleteSchedule(it.id) }) }
                 }
             }
         }
@@ -146,13 +250,16 @@ fun LightsScreen(state: UiState, vm: MainViewModel) {
 }
 
 @Composable
-private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit) {
+private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTimer: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(room.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         if (room.canSwitch) {
+            IconButton(onClick = onTimer) {
+                Icon(Icons.Outlined.Schedule, contentDescription = "Timer or schedule for ${room.name}")
+            }
             Switch(
                 checked = room.anyOn,
                 onCheckedChange = onToggle,
@@ -163,7 +270,7 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun LightCard(device: Device, vm: MainViewModel) {
+private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
     val attrs = device.attributes
     val on = attrs.isOn && device.isReachable
     var expanded by remember { mutableStateOf(false) }
@@ -175,7 +282,7 @@ private fun LightCard(device: Device, vm: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = hasExtras && on) { expanded = !expanded },
+                    .clickable(enabled = device.isReachable) { expanded = !expanded },
             ) {
                 Icon(
                     if (on) Icons.Filled.Lightbulb else Icons.Outlined.Lightbulb,
@@ -195,6 +302,14 @@ private fun LightCard(device: Device, vm: MainViewModel) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                if (device.isReachable) {
+                    Icon(
+                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "Hide controls" else if (hasExtras) "Colour, warmth and timer" else "Timer",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
                 Switch(
                     checked = on,
                     onCheckedChange = { vm.setOn(device, it) },
@@ -212,9 +327,17 @@ private fun LightCard(device: Device, vm: MainViewModel) {
                 )
             }
 
-            AnimatedVisibility(visible = expanded && on && hasExtras) {
+            AnimatedVisibility(visible = expanded && device.isReachable) {
                 Column {
-                    if (device.canSetTemperature) {
+                    if (hasExtras && !on) {
+                        Text(
+                            "Turn the light on to change its colour.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    if (device.canSetTemperature && on) {
                         val range = device.temperatureRange
                         Text("Warmth", style = MaterialTheme.typography.labelMedium)
                         CommitSlider(
@@ -222,37 +345,73 @@ private fun LightCard(device: Device, vm: MainViewModel) {
                                 .coerceIn(range.first, range.last).toFloat(),
                             range = range.first.toFloat()..range.last.toFloat(),
                             label = "Colour temperature of ${device.name}",
+                            brush = Brush.horizontalGradient(listOf(WARM, Color.White, COOL)),
                             onCommit = { vm.setTemperature(device, it.roundToInt()) },
                         )
                     }
-                    if (device.canSetColor) {
+                    if (device.canSetColor && on) {
+                        val hue = (attrs.colorHue ?: 0.0).toFloat().coerceIn(0f, 359f)
+                        val saturation = (attrs.colorSaturation ?: 1.0).toFloat().coerceIn(0f, 1f)
                         Text("Colour", style = MaterialTheme.typography.labelMedium)
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            SWATCHES.forEach { (name, hue) ->
-                                val selected = attrs.colorMode == "color" &&
-                                    attrs.colorHue?.let { kotlin.math.abs(it - hue) < 1 } == true
-                                Box(
-                                    Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.hsv(hue, 0.85f, 1f))
-                                        .border(
-                                            width = if (selected) 3.dp else 0.dp,
-                                            color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
-                                            shape = CircleShape,
-                                        )
-                                        .clickable { vm.setColor(device, hue.toDouble(), 1.0) }
-                                        .semantics { contentDescription = name },
-                                )
-                            }
-                        }
+                        CommitSlider(
+                            value = hue,
+                            range = 0f..359f,
+                            label = "Colour of ${device.name}",
+                            brush = RAINBOW,
+                            onCommit = { vm.setColor(device, it.toDouble(), saturation.coerceAtLeast(0.2f).toDouble()) },
+                        )
+                        Text("Intensity", style = MaterialTheme.typography.labelMedium)
+                        CommitSlider(
+                            value = saturation,
+                            range = 0f..1f,
+                            label = "Colour intensity of ${device.name}",
+                            brush = Brush.horizontalGradient(listOf(Color.White, Color.hsv(hue, 1f, 1f))),
+                            onCommit = { vm.setColor(device, hue.toDouble(), it.toDouble()) },
+                        )
+                    }
+                    TextButton(onClick = onTimer) {
+                        Icon(Icons.Outlined.Schedule, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                        Text("Timer or schedule")
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TimerRow(timer: LightTimer, onCancel: () -> Unit) {
+    val at = remember(timer.atMillis) { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(timer.atMillis)) }
+    Card(Modifier.fillMaxWidth()) {
+        ListItem(
+            leadingContent = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+            headlineContent = { Text("${timer.label} ${if (timer.on) "on" else "off"} at $at") },
+            supportingContent = { Text("Timer, from this phone") },
+            trailingContent = {
+                IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancel timer") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ScheduleRow(scene: Scene, onDelete: () -> Unit) {
+    val days = scene.timeTrigger?.days
+    val daysText = when {
+        days == null || days.size == 7 -> "Every day"
+        days == WEEK.take(5) -> "Weekdays"
+        days == WEEK.drop(5) -> "Weekends"
+        else -> days.joinToString(", ")
+    }
+    Card(Modifier.fillMaxWidth()) {
+        ListItem(
+            leadingContent = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+            headlineContent = { Text(scene.info.name) },
+            supportingContent = { Text("$daysText, on the hub") },
+            trailingContent = {
+                IconButton(onClick = onDelete) { Icon(Icons.Filled.Close, contentDescription = "Delete schedule") }
+            },
+        )
     }
 }
 
@@ -262,30 +421,38 @@ private fun CommitSlider(
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     label: String,
+    brush: Brush? = null,
     onCommit: (Float) -> Unit,
 ) {
     var dragging by remember { mutableStateOf(false) }
     var local by remember { mutableFloatStateOf(value) }
     if (!dragging) local = value
-    Slider(
-        value = local.coerceIn(range),
-        onValueChange = {
-            dragging = true
-            local = it
-        },
-        onValueChangeFinished = {
-            dragging = false
-            onCommit(local)
-        },
-        valueRange = range,
-        modifier = Modifier.semantics { contentDescription = label },
-    )
+    Box(contentAlignment = Alignment.Center) {
+        if (brush != null) {
+            Box(Modifier.fillMaxWidth().height(14.dp).clip(CircleShape).background(brush))
+        }
+        Slider(
+            value = local.coerceIn(range),
+            onValueChange = {
+                dragging = true
+                local = it
+            },
+            onValueChangeFinished = {
+                dragging = false
+                onCommit(local)
+            },
+            valueRange = range,
+            colors = if (brush == null) SliderDefaults.colors() else SliderDefaults.colors(
+                activeTrackColor = Color.Transparent,
+                inactiveTrackColor = Color.Transparent,
+            ),
+            modifier = Modifier.semantics { contentDescription = label },
+        )
+    }
 }
 
-private val SWATCHES = listOf(
-    "Red" to 0f, "Orange" to 30f, "Yellow" to 55f, "Green" to 120f,
-    "Cyan" to 180f, "Blue" to 230f, "Purple" to 275f, "Pink" to 320f,
-)
+private val RAINBOW = Brush.horizontalGradient((0..360 step 30).map { Color.hsv(it.toFloat().coerceAtMost(359f), 1f, 1f) })
+private val CHAOS_RED = Color(0xFFD50000)
 
 private val WARM = Color(0xFFFFB347)
 private val COOL = Color(0xFFBFD9FF)

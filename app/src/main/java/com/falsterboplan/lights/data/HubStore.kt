@@ -27,3 +27,13 @@ class HubStore(context: Context) {
         prefs.edit().clear().apply()
     }
 }
+
+/** Remembers which hub scenes this app created, so it only lists and deletes its own. */
+class ScheduleStore(context: Context) {
+    private val prefs = context.getSharedPreferences("schedules", Context.MODE_PRIVATE)
+
+    fun ids(): Set<String> = prefs.getStringSet("ids", emptySet()).orEmpty().toSet()
+    fun add(id: String) = prefs.edit().putStringSet("ids", ids() + id).apply()
+    fun remove(id: String) = prefs.edit().putStringSet("ids", ids() - id).apply()
+    fun clear() = prefs.edit().clear().apply()
+}

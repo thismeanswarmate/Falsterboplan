@@ -2,6 +2,7 @@ package com.falsterboplan.lights.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 val HubJson = Json {
     ignoreUnknownKeys = true
@@ -69,3 +70,44 @@ data class AuthCode(val code: String)
 
 @Serializable
 data class AuthToken(val access_token: String)
+
+@Serializable
+data class SceneInfo(val name: String = "", val icon: String = "")
+
+@Serializable
+data class TriggerDetails(
+    /** "Mon".."Sun"; absent means every day. */
+    val days: List<String>? = null,
+    /** "HH:MM", hub local time. */
+    val time: String? = null,
+)
+
+@Serializable
+data class SceneTrigger(
+    val type: String = "",
+    val disabled: Boolean = false,
+    val trigger: TriggerDetails? = null,
+)
+
+@Serializable
+data class SceneAction(
+    val id: String? = null,
+    val deviceId: String? = null,
+    val type: String = "",
+    val attributes: JsonObject? = null,
+)
+
+@Serializable
+data class Scene(
+    val id: String,
+    val info: SceneInfo = SceneInfo(),
+    val triggers: List<SceneTrigger> = emptyList(),
+    val actions: List<SceneAction> = emptyList(),
+) {
+    val timeTrigger get() = triggers.firstOrNull { it.type == "time" }?.trigger
+}
+
+@Serializable
+data class CreatedId(val id: String)
+
+val WEEK = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")

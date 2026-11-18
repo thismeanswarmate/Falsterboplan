@@ -8,8 +8,18 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
 - Finds the hub on the network (mDNS), or takes its IP address
 - Pairs by pressing the action button on the underside of the hub
 - Lists lights grouped by room, with a switch per room
-- Per light: on/off, brightness, and (tap the light) warmth and colour where the bulb supports it
+- Per light: on/off and brightness; tap a light for warmth, colour and colour intensity where the
+  bulb supports them
 - Updates live when lights are changed from elsewhere (remotes, the IKEA app)
+- **Timers**: turn a light or a room on/off in N minutes. Fired by the phone, so the phone has to
+  be on the home Wi-Fi when the timer ends
+- **Schedules**: turn a light or a room on/off at a time on chosen weekdays. Stored on the hub as
+  a scene with a time trigger, so they run without the phone (and also show up in the IKEA app)
+- **Add a lamp** (menu): opens the hub's pairing window for lamps that join without a code.
+  Lamps that pair with a QR or number code (Matter, e.g. KAJPLATS) are handed over to the IKEA
+  Home smart app, because no way for a third-party app to pass that code to the hub is known
+- **Home screen widget**: a switch per room
+- **CHAOS**: ten seconds of every light changing at random, then everything is put back
 
 ## Build
 

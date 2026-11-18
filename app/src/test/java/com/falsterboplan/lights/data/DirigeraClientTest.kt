@@ -108,6 +108,70 @@ class DirigeraClientTest {
     }
 
     @Test
+    fun createScheduleSendsTimeTriggeredScene() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"id":"scene-1"}"""))
+
+        val id = client.createSchedule("Sofa lamp on 07:00", true, "07:00", listOf("Mon", "Fri"), listOf("light-1"))
+
+        assertEquals("scene-1", id)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/v1/scenes", request.path)
+        assertEquals(
+            """{"info":{"name":"Sofa lamp on 07:00","icon":"scenes_wake_up"},"type":"userScene",""" +
+                """"triggers":[{"type":"time","disabled":false,"trigger":{"days":["Mon","Fri"],"time":"07:00"}}],""" +
+                """"actions":[{"type":"device","enabled":true,"deviceId":"light-1","attributes":{"isOn":true}}]}""",
+            request.body.readUtf8(),
+        )
+    }
+
+    @Test
+    fun createScheduleRetriesWithOtherDeviceKeyOnBadRequest() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("bad"))
+        server.enqueue(MockResponse().setBody("""{"id":"scene-2"}"""))
+
+        assertEquals("scene-2", client.createSchedule("x", false, "22:30", listOf("Sun"), listOf("light-1")))
+
+        server.takeRequest()
+        assertTrue(server.takeRequest().body.readUtf8().contains(""""id":"light-1""""))
+    }
+
+    @Test
+    fun scenesSkipsEntriesItCannotParseAndDeleteWorks() = runBlocking {
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"id":"s1","info":{"name":"Night","icon":"scenes_moon"},"type":"userScene",
+                   "triggers":[{"id":"t0","type":"app","disabled":false},
+                               {"id":"t1","type":"time","disabled":false,"trigger":{"days":["Mon"],"time":"22:00"},"nextTriggerAt":"x"}],
+                   "actions":[{"id":"light-1","type":"device","attributes":{"isOn":false}}]},
+                  {"id":42,"triggers":"weird"},
+                  {"id":"s2","triggers":[{"type":"sunriseSunset","trigger":{"type":"sunset","offset":600}}]}]""",
+            ),
+        )
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val scenes = client.scenes()
+        assertEquals(listOf("s1", "s2"), scenes.map { it.id })
+        assertEquals("22:00", scenes[0].timeTrigger?.time)
+        assertNull(scenes[1].timeTrigger)
+
+        client.deleteScene("s1")
+        server.takeRequest()
+        val delete = server.takeRequest()
+        assertEquals("DELETE", delete.method)
+        assertEquals("/v1/scenes/s1", delete.path)
+    }
+
+    @Test
+    fun pairingModePatchesTheGateway() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(202))
+        client.setPairingMode("gw", true)
+        val request = server.takeRequest()
+        assertEquals("/v1/devices/gw", request.path)
+        assertEquals("""[{"attributes":{"permittingJoin":true}}]""", request.body.readUtf8())
+    }
+
+    @Test
     fun errorsSurfaceStatus() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401).setBody("nope"))
         val error = runCatching { client.lights() }.exceptionOrNull()

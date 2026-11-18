@@ -8,7 +8,21 @@ import com.falsterboplan.lights.data.Attributes
 import com.falsterboplan.lights.data.Device
 import com.falsterboplan.lights.data.DirigeraClient
 import com.falsterboplan.lights.data.DiscoveredHub
+import com.falsterboplan.lights.data.Hub
 import com.falsterboplan.lights.data.HubDiscovery
+import com.falsterboplan.lights.data.Scene
+import com.falsterboplan.lights.data.ScheduleStore
+import com.falsterboplan.lights.timer.LightTimer
+import com.falsterboplan.lights.timer.TimerScheduler
+import com.falsterboplan.lights.timer.TimerStore
+import com.falsterboplan.lights.widget.WidgetSnapshot
+import com.falsterboplan.lights.widget.WidgetUpdater
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlin.random.Random
 import com.falsterboplan.lights.data.HubException
 import com.falsterboplan.lights.data.HubStore
 import com.falsterboplan.lights.data.PairedHub
@@ -35,21 +49,34 @@ sealed interface Pairing {
     data class Failed(val message: String) : Pairing
 }
 
+sealed interface AddLamp {
+    data object Idle : AddLamp
+    data object Searching : AddLamp
+    data class Found(val names: List<String>) : AddLamp
+    data class Failed(val message: String) : AddLamp
+}
+
 data class UiState(
     val paired: Boolean = false,
     val discovered: List<DiscoveredHub> = emptyList(),
     val pairing: Pairing = Pairing.Idle,
     val lights: List<Device> = emptyList(),
     val loading: Boolean = false,
+    val timers: List<LightTimer> = emptyList(),
+    val schedules: List<Scene> = emptyList(),
+    val chaos: Boolean = false,
+    val addLamp: AddLamp = AddLamp.Idle,
     val error: String? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val store = HubStore(app)
+    private val timerStore = TimerStore(app)
+    private val scheduleStore = ScheduleStore(app)
     private val discovery = HubDiscovery(app)
 
     private var hub: PairedHub? = store.load()
-    private var client: DirigeraClient? = hub?.let(::clientFor)
+    private var client: DirigeraClient? = hub?.let(Hub::clientFor)
 
     private val _state = MutableStateFlow(UiState(paired = hub != null))
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -60,11 +87,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         if (hub != null) startLive() else startDiscovery()
-    }
-
-    private fun clientFor(hub: PairedHub): DirigeraClient {
-        val trust = PinningTrustManager(expectedPin = { hub.pin }, onUnpinned = {})
-        return DirigeraClient(DirigeraClient.baseUrlFor(hub.host), hubHttpClient(trust), hub.token)
     }
 
     // ---- Pairing -------------------------------------------------------
@@ -103,7 +125,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val paired = PairedHub(host, accessToken, pin)
                 store.save(paired)
                 hub = paired
-                client = clientFor(paired)
+                client = Hub.clientFor(paired)
                 discoveryJob?.cancel()
                 _state.update { it.copy(paired = true, pairing = Pairing.Idle, error = null) }
                 startLive()
@@ -122,10 +144,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun forgetHub() {
         liveJob?.cancel()
+        chaosJob?.cancel()
+        timerStore.all().forEach { TimerScheduler.cancel(getApplication(), it.id) }
+        timerStore.clear()
+        // Schedules stay on the hub (they belong to the home, not this phone); we just stop tracking them.
+        scheduleStore.clear()
         store.clear()
         hub = null
         client = null
         _state.value = UiState()
+        viewModelScope.launch { WidgetUpdater.push(getApplication(), WidgetSnapshot(paired = false)) }
         startDiscovery()
     }
 
@@ -162,7 +190,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (showSpinner) _state.update { it.copy(loading = true) }
         try {
             val lights = c.lights()
-            _state.update { it.copy(lights = lights, loading = false, error = null) }
+            val now = System.currentTimeMillis()
+            _state.update {
+                it.copy(
+                    lights = lights,
+                    loading = false,
+                    error = null,
+                    timers = timerStore.all().filter { t -> t.atMillis > now - 60_000 },
+                )
+            }
+            if (!_state.value.chaos) WidgetUpdater.push(getApplication(), WidgetSnapshot.of(lights))
+            loadSchedules(c)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -231,6 +269,179 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 client?.let { load(it, showSpinner = false) }
             }
         }
+    }
+
+    // ---- Timers (fired by this phone) ---------------------------------
+
+    fun addTimer(label: String, lightIds: List<String>, on: Boolean, minutes: Int) {
+        if (lightIds.isEmpty() || minutes <= 0) return
+        val at = System.currentTimeMillis() + minutes * 60_000L
+        val timer = LightTimer((at and 0x7fffffff).toInt(), label, lightIds, on, at)
+        timerStore.add(timer)
+        TimerScheduler.schedule(getApplication(), timer)
+        _state.update { it.copy(timers = timerStore.all()) }
+    }
+
+    fun cancelTimer(id: Int) {
+        TimerScheduler.cancel(getApplication(), id)
+        timerStore.remove(id)
+        _state.update { it.copy(timers = timerStore.all()) }
+    }
+
+    // ---- Schedules (stored on and run by the hub) ----------------------
+
+    private suspend fun loadSchedules(c: DirigeraClient) {
+        val mine = scheduleStore.ids()
+        if (mine.isEmpty()) {
+            _state.update { it.copy(schedules = emptyList()) }
+            return
+        }
+        runCatching { c.scenes() }.onSuccess { scenes ->
+            _state.update { it.copy(schedules = scenes.filter { s -> s.id in mine }.sortedBy { s -> s.timeTrigger?.time }) }
+        }
+    }
+
+    fun addSchedule(label: String, lightIds: List<String>, on: Boolean, hour: Int, minute: Int, days: List<String>) {
+        val c = client ?: return
+        if (lightIds.isEmpty() || days.isEmpty()) return
+        send {
+            val time = "%02d:%02d".format(hour, minute)
+            val id = c.createSchedule("$label ${if (on) "on" else "off"} $time", on, time, days, lightIds)
+            scheduleStore.add(id)
+            loadSchedules(c)
+        }
+    }
+
+    fun deleteSchedule(id: String) {
+        val c = client ?: return
+        send {
+            try {
+                c.deleteScene(id)
+            } catch (e: HubException) {
+                if (e.status != 404) throw e // already removed from the IKEA app
+            }
+            scheduleStore.remove(id)
+            loadSchedules(c)
+        }
+    }
+
+    // ---- Adding lamps --------------------------------------------------
+
+    private var addLampJob: Job? = null
+
+    /** Opens the hub's pairing window and waits up to two minutes for a new device to join. */
+    fun startAddLamp() {
+        val c = client ?: return
+        addLampJob?.cancel()
+        addLampJob = viewModelScope.launch {
+            _state.update { it.copy(addLamp = AddLamp.Searching) }
+            try {
+                val before = c.devices()
+                val gateway = before.firstOrNull { it.type == "gateway" }
+                    ?: error("The hub didn't report itself, so pairing mode can't be switched on.")
+                val known = before.map { it.id }.toSet()
+                c.setPairingMode(gateway.id, true)
+                var added = emptyList<Device>()
+                try {
+                    repeat(40) {
+                        if (added.isEmpty()) {
+                            delay(3000)
+                            added = runCatching { c.devices() }.getOrDefault(emptyList()).filter { it.id !in known }
+                        }
+                    }
+                } finally {
+                    withContext(NonCancellable) { runCatching { c.setPairingMode(gateway.id, false) } }
+                }
+                _state.update {
+                    it.copy(
+                        addLamp = if (added.isEmpty()) {
+                            AddLamp.Failed("No new lamp joined within two minutes.")
+                        } else {
+                            AddLamp.Found(added.map { d -> d.name })
+                        },
+                    )
+                }
+                load(c, showSpinner = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(addLamp = AddLamp.Failed(describe(e))) }
+            }
+        }
+    }
+
+    fun stopAddLamp() {
+        addLampJob?.cancel()
+        _state.update { it.copy(addLamp = AddLamp.Idle) }
+    }
+
+    // ---- Chaos ---------------------------------------------------------
+
+    private var chaosJob: Job? = null
+
+    /** Ten seconds of every light changing at random, then everything goes back to how it was. */
+    fun startChaos() {
+        val c = client ?: return
+        if (_state.value.chaos) return
+        val before = _state.value.lights.filter { it.isReachable }
+        if (before.isEmpty()) return
+        chaosJob = viewModelScope.launch {
+            _state.update { it.copy(chaos = true) }
+            try {
+                each(before.filter { !it.attributes.isOn }) { c.setDevice(it.id, buildJsonObject { put("isOn", true) }) }
+                val end = System.currentTimeMillis() + 10_000
+                var tick = 0
+                while (System.currentTimeMillis() < end) {
+                    val started = System.currentTimeMillis()
+                    val step = tick++
+                    each(before) { c.setDevice(it.id, chaosAttributes(it, step)) }
+                    // At most two changes a second: lively, but below the rate that is risky for
+                    // people with photosensitive epilepsy, and gentle on the Zigbee network.
+                    delay((500 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
+                }
+            } finally {
+                withContext(NonCancellable) {
+                    each(before) { restore(c, it) }
+                    _state.update { it.copy(chaos = false) }
+                    load(c, showSpinner = false)
+                }
+            }
+        }
+    }
+
+    private suspend fun each(lights: List<Device>, block: suspend (Device) -> Unit) = coroutineScope {
+        lights.map { async { runCatching { block(it) } } }.awaitAll()
+    }
+
+    private fun chaosAttributes(light: Device, step: Int): JsonObject = buildJsonObject {
+        when {
+            light.canSetColor -> {
+                put("colorHue", Random.nextInt(360).toDouble())
+                put("colorSaturation", 1.0)
+            }
+            light.canSetTemperature -> {
+                val range = light.temperatureRange
+                put("colorTemperature", if (Random.nextBoolean()) range.first else range.last)
+            }
+            light.canDim -> put("lightLevel", if (Random.nextBoolean()) 100 else Random.nextInt(1, 30))
+            else -> put("isOn", (step + light.id.hashCode()) % 2 == 0)
+        }
+    }
+
+    private suspend fun restore(c: DirigeraClient, light: Device) {
+        val a = light.attributes
+        if (light.canSetColor && a.colorMode == "color" && a.colorHue != null) {
+            c.setDevice(light.id, buildJsonObject {
+                put("colorHue", a.colorHue)
+                put("colorSaturation", a.colorSaturation ?: 1.0)
+            })
+        } else if (light.canSetTemperature && a.colorTemperature != null) {
+            c.setDevice(light.id, buildJsonObject { put("colorTemperature", a.colorTemperature) })
+        }
+        if (light.canDim && a.lightLevel != null) {
+            c.setDevice(light.id, buildJsonObject { put("lightLevel", a.lightLevel) })
+        }
+        c.setDevice(light.id, buildJsonObject { put("isOn", a.isOn) })
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }
