@@ -21,6 +21,9 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.Switch
+import androidx.glance.appwidget.SwitchDefaults
+import androidx.glance.unit.ColorProvider
+import androidx.compose.ui.graphics.Color
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.ToggleableStateKey
 import androidx.glance.appwidget.action.actionRunCallback
@@ -89,6 +92,13 @@ data class WidgetSnapshot(val paired: Boolean, val rooms: List<WidgetRoom> = emp
     }
 }
 
+// Brand colours, as in ui/Theme.kt.
+private val Cream = Color(0xFFF5EAD6)
+private val Ink = Color(0xFF54332A)
+private val InkSoft = Color(0xFF7A5549)
+private val Pink = Color(0xFFE94E76)
+private val Clay = Color(0xFFC6A49A)
+
 object WidgetUpdater {
     val SNAPSHOT = stringPreferencesKey("snapshot")
 
@@ -130,24 +140,29 @@ private fun Content(snapshot: WidgetSnapshot?) {
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
-            .background(GlanceTheme.colors.widgetBackground)
+            .background(ColorProvider(Cream))
             .cornerRadius(24.dp)
             .padding(12.dp),
     ) {
         Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                provider = ImageProvider(R.drawable.house),
+                contentDescription = null,
+                modifier = GlanceModifier.size(36.dp).clickable(openApp),
+            )
             Text(
                 "Lights",
-                modifier = GlanceModifier.defaultWeight().clickable(openApp),
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                modifier = GlanceModifier.defaultWeight().padding(start = 8.dp).clickable(openApp),
+                style = TextStyle(color = ColorProvider(Ink), fontSize = 18.sp, fontWeight = FontWeight.Bold),
             )
             Image(
                 provider = ImageProvider(R.drawable.ic_refresh),
                 contentDescription = "Refresh",
-                colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface),
+                colorFilter = ColorFilter.tint(ColorProvider(Ink)),
                 modifier = GlanceModifier.size(32.dp).padding(4.dp).clickable(actionRunCallback<RefreshAction>()),
             )
         }
-        val hint = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 14.sp)
+        val hint = TextStyle(color = ColorProvider(InkSoft), fontSize = 14.sp)
         when {
             snapshot == null -> Text("Loading…", style = hint)
             !snapshot.paired ->
@@ -163,14 +178,20 @@ private fun Content(snapshot: WidgetSnapshot?) {
                             Text(
                                 room.name,
                                 maxLines = 1,
-                                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 16.sp),
+                                style = TextStyle(color = ColorProvider(Ink), fontSize = 16.sp),
                             )
                             Text(
                                 if (room.anyOn) "${room.onCount} of ${room.lightIds.size} on" else "Off",
-                                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                                style = TextStyle(color = ColorProvider(InkSoft), fontSize = 12.sp),
                             )
                         }
                         Switch(
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = ColorProvider(Color.White),
+                                uncheckedThumbColor = ColorProvider(Color.White),
+                                checkedTrackColor = ColorProvider(Pink),
+                                uncheckedTrackColor = ColorProvider(Clay),
+                            ),
                             checked = room.anyOn,
                             onCheckedChange = actionRunCallback<ToggleRoomAction>(
                                 actionParametersOf(ToggleRoomAction.ROOM to (room.id ?: "")),

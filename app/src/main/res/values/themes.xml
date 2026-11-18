@@ -1,3 +1,5 @@
 <resources>
-    <style name="Theme.Falsterboplan" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Falsterboplan" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/cream</item>
+    </style>
 </resources>

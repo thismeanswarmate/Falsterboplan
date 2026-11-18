@@ -24,7 +24,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,32 +35,47 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import com.falsterboplan.lights.R
 
 @Composable
-fun SetupScreen(state: UiState, vm: MainViewModel) {
-    Scaffold { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text("Connect your hub", style = MaterialTheme.typography.headlineMedium)
-
-            when (val pairing = state.pairing) {
-                is Pairing.WaitingForButton -> WaitingCard(pairing.host, onCancel = vm::cancelPairing)
-                else -> {
-                    Text(
-                        "Make sure your phone is on the same Wi-Fi as your DIRIGERA hub.",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    if (pairing is Pairing.Failed) {
-                        Text(pairing.message, color = MaterialTheme.colorScheme.error)
-                    }
-                    HubPicker(state, onPair = vm::pair)
+fun SetupContent(state: UiState, vm: MainViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Image(
+            painterResource(R.drawable.icon_tile),
+            contentDescription = null,
+            modifier = Modifier.size(104.dp).clip(RoundedCornerShape(24.dp)).align(Alignment.CenterHorizontally),
+        )
+        Text(
+            "Welcome home",
+            style = MaterialTheme.typography.headlineLarge,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        when (val pairing = state.pairing) {
+            is Pairing.WaitingForButton -> WaitingCard(pairing.host, onCancel = vm::cancelPairing)
+            else -> {
+                Text(
+                    "Make sure your phone is on the same Wi-Fi as your DIRIGERA hub.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (pairing is Pairing.Failed) {
+                    Text(pairing.message, color = MaterialTheme.colorScheme.error)
                 }
+                HubPicker(state, onPair = vm::pair)
             }
         }
     }
@@ -95,10 +109,16 @@ private fun HubPicker(state: UiState, onPair: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
         placeholder = { Text("192.168.1.50") },
+        shape = RoundedCornerShape(20.dp),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
         keyboardActions = KeyboardActions(onGo = { onPair(host) }),
     )
-    Button(onClick = { onPair(host) }, enabled = host.isNotBlank()) { Text("Connect") }
+    Button(
+        onClick = { onPair(host) },
+        enabled = host.isNotBlank(),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().height(56.dp),
+    ) { Text("Connect", style = MaterialTheme.typography.titleMedium) }
 }
 
 @Composable

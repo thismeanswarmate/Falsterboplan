@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Falsterboplan</string>
+    <string name="app_name">Home app</string>
     <string name="widget_description">Switch the lights in each room on and off</string>
 </resources>

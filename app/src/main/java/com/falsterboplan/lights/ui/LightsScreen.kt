@@ -34,6 +34,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.falsterboplan.lights.R
+import androidx.compose.ui.text.style.TextAlign
 import com.falsterboplan.lights.data.Scene
 import com.falsterboplan.lights.data.WEEK
 import com.falsterboplan.lights.timer.LightTimer
@@ -85,6 +90,7 @@ private sealed interface Row {
         val anyOn: Boolean,
         val canSwitch: Boolean,
         val lightIds: List<String>,
+        val onCount: Int,
     ) : Row
     data class Light(val device: Device) : Row
 }
@@ -100,111 +106,69 @@ private fun rowsOf(lights: List<Device>): List<Row> = lights
             anyOn = members.any { it.attributes.isOn && it.isReachable },
             canSwitch = roomId != NO_ROOM && members.any { it.isReachable },
             lightIds = members.map { it.id },
+            onCount = members.count { it.attributes.isOn && it.isReachable },
         )
         listOf(header) + members.sortedBy { it.name.lowercase() }.map { Row.Light(it) }
     }
 
+/** The Lights tab: rooms and lights, timers and schedules, and the CHAOS button pinned below. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LightsScreen(state: UiState, vm: MainViewModel) {
-    val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(state.error) {
-        state.error?.let {
-            snackbar.showSnackbar(it)
-            vm.dismissError()
-        }
-    }
-
+fun LightsTab(state: UiState, vm: MainViewModel) {
     var timerTarget by remember { mutableStateOf<Target?>(null) }
     timerTarget?.let { TimerDialog(it, vm, onDismiss = { timerTarget = null }) }
-
-    var addLamp by remember { mutableStateOf(false) }
-    if (addLamp) {
-        AddLampDialog(state.addLamp, vm, onDismiss = {
-            addLamp = false
-            vm.stopAddLamp()
-        })
-    }
 
     var confirmChaos by remember { mutableStateOf(false) }
     if (confirmChaos) {
         AlertDialog(
             onDismissRequest = { confirmChaos = false },
-            title = { Text("CHAOS") },
-            text = { Text("Are you sure you want to start chaos mode?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        confirmChaos = false
-                        vm.startChaos()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CHAOS_RED, contentColor = Color.White),
-                ) { Text("CHAOS", fontWeight = FontWeight.Black) }
+            title = {
+                Text(
+                    "CHAOS",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 6.sp),
+                    color = Brand.Pink,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             },
-            dismissButton = { TextButton(onClick = { confirmChaos = false }) { Text("Cancel") } },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Are you sure you want to start chaos mode?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Every light flickers in different colours for ten seconds, then goes back to how it was.",
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            },
+            confirmButton = {
+                ChaosButton("CHAOS", enabled = true, modifier = Modifier.fillMaxWidth()) {
+                    confirmChaos = false
+                    vm.startChaos()
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmChaos = false }, modifier = Modifier.fillMaxWidth()) { Text("No, keep it calm") }
+            },
         )
     }
 
-    Scaffold(
-        bottomBar = {
-            Button(
-                onClick = { confirmChaos = true },
-                enabled = !state.chaos && state.lights.any { it.isReachable },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CHAOS_RED,
-                    contentColor = Color.White,
-                    disabledContainerColor = CHAOS_RED.copy(alpha = 0.5f),
-                    disabledContentColor = Color.White,
-                ),
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .fillMaxWidth()
-                    .height(72.dp),
-            ) {
-                Text(if (state.chaos) "CHAOS…" else "CHAOS", fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp)
-            }
-        },
-        topBar = {
-            TopAppBar(
-                title = { Text("Lights") },
-                actions = {
-                    var menu by remember { mutableStateOf(false) }
-                    IconButton(onClick = { menu = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Add a lamp") },
-                            onClick = {
-                                menu = false
-                                addLamp = true
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Forget hub") },
-                            onClick = {
-                                menu = false
-                                vm.forgetHub()
-                            },
-                        )
-                    }
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { padding ->
+    Column(Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = state.loading,
             onRefresh = vm::refresh,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
             val rows = remember(state.lights) { rowsOf(state.lights) }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (rows.isEmpty() && !state.loading) {
                     item {
@@ -246,6 +210,30 @@ fun LightsScreen(state: UiState, vm: MainViewModel) {
                 }
             }
         }
+        ChaosButton(
+            text = if (state.chaos) "CHAOS…" else "CHAOS",
+            enabled = !state.chaos && state.lights.any { it.isReachable },
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp).fillMaxWidth(),
+            onClick = { confirmChaos = true },
+        )
+    }
+}
+
+@Composable
+private fun ChaosButton(text: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Brand.Pink,
+            contentColor = Color.White,
+            disabledContainerColor = Brand.Rose,
+            disabledContentColor = Color.White,
+        ),
+        shape = RoundedCornerShape(24.dp),
+        modifier = modifier.height(72.dp),
+    ) {
+        Text(text, fontFamily = Fraunces, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = 8.sp)
     }
 }
 
@@ -256,6 +244,13 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTime
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(room.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        if (room.onCount > 0) {
+            Text(
+                "${room.onCount} of ${room.lightIds.size} on",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.background(Brand.Mint, RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
         if (room.canSwitch) {
             IconButton(onClick = onTimer) {
                 Icon(Icons.Outlined.Schedule, contentDescription = "Timer or schedule for ${room.name}")
@@ -263,6 +258,7 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTime
             Switch(
                 checked = room.anyOn,
                 onCheckedChange = onToggle,
+                colors = brandSwitchColors(),
                 modifier = Modifier.semantics { contentDescription = "All lights in ${room.name}" },
             )
         }
@@ -276,26 +272,41 @@ private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val hasExtras = device.canSetTemperature || device.canSetColor
 
-    Card(Modifier.fillMaxWidth().alpha(if (device.isReachable) 1f else 0.5f)) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().alpha(if (device.isReachable) 1f else 0.55f),
+        border = if (expanded && device.isReachable) BorderStroke(2.dp, Brand.Mint) else null,
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(enabled = device.isReachable) { expanded = !expanded },
             ) {
-                Icon(
-                    if (on) Icons.Filled.Lightbulb else Icons.Outlined.Lightbulb,
-                    contentDescription = null,
-                    tint = if (on) glowOf(device) else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                // Brand bulb drawing; the small dot shows roughly the colour the light is giving off.
+                Box(Modifier.size(52.dp)) {
+                    Image(
+                        painterResource(if (on) R.drawable.bulb_on else R.drawable.bulb_off),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (on && hasExtras) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(16.dp)
+                                .background(glowOf(device), CircleShape)
+                                .border(2.dp, Brand.Card, CircleShape),
+                        )
+                    }
+                }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text(device.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         when {
                             !device.isReachable -> "Unreachable"
                             !on -> "Off"
-                            attrs.lightLevel != null -> "${attrs.lightLevel}%"
+                            attrs.lightLevel != null -> "${attrs.lightLevel}%" + lookOf(device)
                             else -> "On"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -314,11 +325,13 @@ private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
                     checked = on,
                     onCheckedChange = { vm.setOn(device, it) },
                     enabled = device.isReachable,
+                    colors = brandSwitchColors(),
                     modifier = Modifier.semantics { contentDescription = device.name },
                 )
             }
 
             if (device.canDim && on) {
+                SliderLabel("Brightness")
                 CommitSlider(
                     value = (attrs.lightLevel ?: 100).toFloat(),
                     range = 1f..100f,
@@ -339,7 +352,7 @@ private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
                     }
                     if (device.canSetTemperature && on) {
                         val range = device.temperatureRange
-                        Text("Warmth", style = MaterialTheme.typography.labelMedium)
+                        SliderLabel("Warmth")
                         CommitSlider(
                             value = (attrs.colorTemperature ?: range.first)
                                 .coerceIn(range.first, range.last).toFloat(),
@@ -352,7 +365,7 @@ private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
                     if (device.canSetColor && on) {
                         val hue = (attrs.colorHue ?: 0.0).toFloat().coerceIn(0f, 359f)
                         val saturation = (attrs.colorSaturation ?: 1.0).toFloat().coerceIn(0f, 1f)
-                        Text("Colour", style = MaterialTheme.typography.labelMedium)
+                        SliderLabel("Colour")
                         CommitSlider(
                             value = hue,
                             range = 0f..359f,
@@ -360,7 +373,7 @@ private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
                             brush = RAINBOW,
                             onCommit = { vm.setColor(device, it.toDouble(), saturation.coerceAtLeast(0.2f).toDouble()) },
                         )
-                        Text("Intensity", style = MaterialTheme.typography.labelMedium)
+                        SliderLabel("Intensity")
                         CommitSlider(
                             value = saturation,
                             range = 0f..1f,
@@ -415,6 +428,31 @@ private fun ScheduleRow(scene: Scene, onDelete: () -> Unit) {
     }
 }
 
+@Composable
+private fun SliderLabel(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 0.6.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 10.dp),
+    )
+}
+
+/** " · warm", " · colour" and so on, for the line under a light's name. */
+private fun lookOf(device: Device): String {
+    val a = device.attributes
+    val temperature = a.colorTemperature
+    return when {
+        device.canSetColor && a.colorMode == "color" -> " · colour"
+        device.canSetTemperature && temperature != null -> {
+            val range = device.temperatureRange
+            val t = (temperature - range.first).toFloat() / (range.last - range.first).coerceAtLeast(1)
+            if (t < 0.35f) " · warm" else if (t > 0.65f) " · cool" else " · neutral"
+        }
+        else -> ""
+    }
+}
+
 /** A slider that tracks the finger locally and only talks to the hub when the drag ends. */
 @Composable
 private fun CommitSlider(
@@ -442,19 +480,23 @@ private fun CommitSlider(
                 onCommit(local)
             },
             valueRange = range,
-            colors = if (brush == null) SliderDefaults.colors() else SliderDefaults.colors(
-                activeTrackColor = Color.Transparent,
-                inactiveTrackColor = Color.Transparent,
-            ),
+            colors = if (brush == null) {
+                SliderDefaults.colors(thumbColor = Brand.Ink, activeTrackColor = Brand.Pink, inactiveTrackColor = Brand.Sand)
+            } else {
+                SliderDefaults.colors(
+                    thumbColor = Brand.Ink,
+                    activeTrackColor = Color.Transparent,
+                    inactiveTrackColor = Color.Transparent,
+                )
+            },
             modifier = Modifier.semantics { contentDescription = label },
         )
     }
 }
 
 private val RAINBOW = Brush.horizontalGradient((0..360 step 30).map { Color.hsv(it.toFloat().coerceAtMost(359f), 1f, 1f) })
-private val CHAOS_RED = Color(0xFFD50000)
 
-private val WARM = Color(0xFFFFB347)
+private val WARM = Color(0xFFFFC870)
 private val COOL = Color(0xFFBFD9FF)
 
 /** Approximate colour of the light the bulb is giving off, for the icon tint. */
