@@ -52,20 +52,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.falsterboplan.lights.data.BuyItem
 import com.falsterboplan.lights.data.Priority
-import com.falsterboplan.lights.data.ShoppingStore
+import com.falsterboplan.lights.data.Shopping
+import com.falsterboplan.lights.widget.LightsWidget
+import androidx.glance.appwidget.updateAll
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import com.falsterboplan.lights.data.forDisplay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 class ShoppingViewModel(app: Application) : AndroidViewModel(app) {
-    private val store = ShoppingStore(app)
-    private val _items = MutableStateFlow(store.load())
-    val items: StateFlow<List<BuyItem>> = _items.asStateFlow()
+    val items: StateFlow<List<BuyItem>> = Shopping.items(app)
 
     private fun change(transform: (List<BuyItem>) -> List<BuyItem>) {
-        _items.value = transform(_items.value)
-        store.save(_items.value)
+        Shopping.change(getApplication(), transform)
+        viewModelScope.launch { LightsWidget().updateAll(getApplication()) }
     }
 
     fun add(name: String, priority: Priority) {

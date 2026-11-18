@@ -41,8 +41,20 @@ import com.falsterboplan.lights.R
 /** The app frame: house banner, the Lights and To buy tabs, and whichever tab is showing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(state: UiState, vm: MainViewModel, shopping: ShoppingViewModel) {
+fun HomeScreen(
+    state: UiState,
+    vm: MainViewModel,
+    shopping: ShoppingViewModel,
+    requestedTab: Int? = null,
+    onTabShown: () -> Unit = {},
+) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null) {
+            tab = requestedTab.coerceIn(0, 1)
+            onTabShown()
+        }
+    }
     val toBuyCount = shopping.items.collectAsStateWithLifecycle().value.count { !it.bought }
 
     val snackbar = remember { SnackbarHostState() }

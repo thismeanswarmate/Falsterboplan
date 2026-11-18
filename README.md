@@ -23,7 +23,8 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
 - **To buy** tab: a shopping list with High/Medium/Low priority; tick items off when bought.
   Kept on the phone
 - **Vacuum** tab: a disabled placeholder, nothing behind it yet
-- **Home screen widget**: a switch per room
+- **Home screen widget**: a Lights tab (switch per room; tap a room for brightness steps and
+  warmth/colour swatches) and a To buy tab (tick items off)
 
 ## Build
 

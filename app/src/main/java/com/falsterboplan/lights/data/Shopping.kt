@@ -1,6 +1,8 @@
 package com.falsterboplan.lights.data
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 
 enum class Priority(val label: String) {
@@ -32,5 +34,21 @@ class ShoppingStore(context: Context) {
 
     fun save(items: List<BuyItem>) {
         prefs.edit().putString("items", HubJson.encodeToString(items)).apply()
+    }
+}
+
+/** The one to-buy list for the whole process, shared by the app screen and the home screen widget. */
+object Shopping {
+    private var flow: MutableStateFlow<List<BuyItem>>? = null
+
+    @Synchronized
+    fun items(context: Context): StateFlow<List<BuyItem>> =
+        flow ?: MutableStateFlow(ShoppingStore(context.applicationContext).load()).also { flow = it }
+
+    @Synchronized
+    fun change(context: Context, transform: (List<BuyItem>) -> List<BuyItem>) {
+        val state = items(context) as MutableStateFlow<List<BuyItem>>
+        state.value = transform(state.value)
+        ShoppingStore(context.applicationContext).save(state.value)
     }
 }

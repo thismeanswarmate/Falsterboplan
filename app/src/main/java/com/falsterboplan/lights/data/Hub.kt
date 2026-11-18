@@ -20,7 +20,7 @@ object Hub {
     fun client(context: Context): DirigeraClient? = HubStore(context).load()?.let(::clientFor)
 }
 
-/** Switches a room with one request, or light by light if the hub refuses the room-wide form. */
+/** Applies attributes to a room with one request, or light by light if the hub refuses the room-wide form. */
 suspend fun DirigeraClient.setRoomOrEach(roomId: String?, lightIds: List<String>, attributes: JsonObject) {
     if (roomId != null) {
         try {
@@ -29,5 +29,6 @@ suspend fun DirigeraClient.setRoomOrEach(roomId: String?, lightIds: List<String>
         } catch (_: HubException) {
         }
     }
-    lightIds.forEach { setDevice(it, attributes) }
+    // One by one; a light that can't do what's asked (say, colour) is skipped.
+    lightIds.forEach { runCatching { setDevice(it, attributes) } }
 }
