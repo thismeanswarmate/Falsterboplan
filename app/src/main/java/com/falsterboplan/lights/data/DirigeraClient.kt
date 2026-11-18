@@ -130,6 +130,16 @@ class DirigeraClient(
         return HubJson.decodeFromString<CreatedId>(call(authed(url("rooms")).post(body).build())).id
     }
 
+    /** The hub replaces the whole room, so the icon and colour are sent back unchanged. */
+    suspend fun renameRoom(room: Room, name: String) {
+        val body = buildJsonObject {
+            put("name", name)
+            put("icon", room.icon.ifBlank { "rooms_home" })
+            put("color", room.color.ifBlank { "ikea_green_no_65" })
+        }.toString().toRequestBody(JSON)
+        call(authed(url("rooms/${room.id}")).put(body).build())
+    }
+
     suspend fun moveToRoom(roomId: String, deviceIds: List<String>) {
         val body = buildJsonObject {
             putJsonArray("deviceIds") { deviceIds.forEach { add(it) } }

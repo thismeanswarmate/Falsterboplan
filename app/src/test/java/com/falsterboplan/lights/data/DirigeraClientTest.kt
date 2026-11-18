@@ -181,7 +181,8 @@ class DirigeraClientTest {
         client.rename("light-1", "Reading lamp")
         assertEquals("""[{"attributes":{"customName":"Reading lamp"}}]""", server.takeRequest().body.readUtf8())
 
-        assertEquals(listOf(Room("room-1", "Living room")), client.rooms())
+        val rooms = client.rooms()
+        assertEquals(listOf(Room("room-1", "Living room", icon = "rooms_sofa", color = "ikea_green_no_65")), rooms)
         assertEquals("/v1/rooms", server.takeRequest().path)
 
         assertEquals("room-2", client.createRoom("Hallway"))
@@ -189,6 +190,13 @@ class DirigeraClientTest {
         assertEquals("POST", create.method)
         assertEquals("/v1/rooms", create.path)
         assertEquals("""{"name":"Hallway","icon":"rooms_home","color":"ikea_green_no_65"}""", create.body.readUtf8())
+
+        server.enqueue(MockResponse().setResponseCode(200))
+        client.renameRoom(rooms[0], "Lounge")
+        val rename = server.takeRequest()
+        assertEquals("PUT", rename.method)
+        assertEquals("/v1/rooms/room-1", rename.path)
+        assertEquals("""{"name":"Lounge","icon":"rooms_sofa","color":"ikea_green_no_65"}""", rename.body.readUtf8())
 
         client.moveToRoom("room-2", listOf("light-1"))
         val move = server.takeRequest()

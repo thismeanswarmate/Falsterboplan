@@ -10,8 +10,7 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
 - Lists lights grouped by room, with a switch per room
 - Per light: on/off and brightness; tap a light for warmth, colour and colour intensity where the
   bulb supports them
-- Rename a light, add a room, and move a light to another room (tap a light; rooms are also
-  under the menu)
+- Rename lights and rooms, add a room, and move a light to another room
 - Updates live when lights are changed from elsewhere (remotes, the IKEA app)
 - **Timers**: turn a light or a room on/off in N minutes. Fired by the phone, so the phone has to
   be on the home Wi-Fi when the timer ends

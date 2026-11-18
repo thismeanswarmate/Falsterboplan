@@ -283,6 +283,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         send { c.rename(device.id, trimmed) }
     }
 
+    fun renameRoom(roomId: String, name: String) {
+        val c = client ?: return
+        val trimmed = name.trim()
+        val room = _state.value.rooms.firstOrNull { it.id == roomId }
+            ?: _state.value.lights.firstNotNullOfOrNull { l -> l.room?.takeIf { it.id == roomId } }
+            ?: return
+        if (trimmed.isEmpty() || trimmed == room.name) return
+        _state.update { s ->
+            s.copy(
+                rooms = s.rooms.map { if (it.id == roomId) it.copy(name = trimmed) else it },
+                lights = s.lights.map { l -> if (l.room?.id == roomId) l.copy(room = l.room.copy(name = trimmed)) else l },
+            )
+        }
+        send { c.renameRoom(room, trimmed) }
+    }
+
     fun moveLight(device: Device, room: Room) {
         val c = client ?: return
         if (device.room?.id == room.id) return

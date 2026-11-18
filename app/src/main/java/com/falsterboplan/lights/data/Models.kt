@@ -14,6 +14,9 @@ val HubJson = Json {
 data class Room(
     val id: String,
     val name: String = "",
+    /** The hub's own icon and colour names; kept so that renaming a room doesn't change them. */
+    val icon: String = "",
+    val color: String = "",
 )
 
 @Serializable

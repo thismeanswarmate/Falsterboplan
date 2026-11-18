@@ -64,6 +64,26 @@ fun RenameDialog(device: Device, vm: MainViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
+fun RenameRoomDialog(roomId: String, currentName: String, vm: MainViewModel, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename room") },
+        text = { NameField(name, { name = it }, "Room name") },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    vm.renameRoom(roomId, name)
+                    onDismiss()
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
 fun NewRoomDialog(vm: MainViewModel, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -133,6 +134,9 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
     var renaming by remember { mutableStateOf<Device?>(null) }
     renaming?.let { RenameDialog(it, vm, onDismiss = { renaming = null }) }
 
+    var renamingRoom by remember { mutableStateOf<Row.RoomHeader?>(null) }
+    renamingRoom?.let { RenameRoomDialog(it.id, it.name, vm, onDismiss = { renamingRoom = null }) }
+
     var moving by remember { mutableStateOf<Device?>(null) }
     moving?.let { MoveDialog(it, state.rooms, vm, onDismiss = { moving = null }) }
 
@@ -173,6 +177,7 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
                             row,
                             onToggle = { vm.setRoomOn(row.id, it) },
                             onTimer = { timerTarget = Target(row.name, row.lightIds) },
+                            onRename = { renamingRoom = row },
                         )
                         is Row.Light -> LightCard(
                             row.device,
@@ -206,12 +211,22 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
 }
 
 @Composable
-private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTimer: () -> Unit) {
+private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTimer: () -> Unit, onRename: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(room.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        if (room.id != NO_ROOM) {
+            IconButton(onClick = onRename) {
+                Icon(
+                    Icons.Outlined.Edit,
+                    contentDescription = "Rename ${room.name}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
         if (room.canSwitch) {
             IconButton(onClick = onTimer) {
                 Icon(Icons.Outlined.Schedule, contentDescription = "Timer or schedule for ${room.name}")
