@@ -37,12 +37,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.falsterboplan.lights.R
-import com.falsterboplan.lights.auth.Auth
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.launch
 
 /** The app frame: house banner, the Lights and To buy tabs, and whichever tab is showing. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,6 +47,9 @@ fun HomeScreen(
     shopping: ShoppingViewModel,
     requestedTab: Int? = null,
     onTabShown: () -> Unit = {},
+    /** Who is signed in; null in a build without sign-in. */
+    user: String? = null,
+    onSignOut: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(requestedTab) {
@@ -88,19 +85,6 @@ fun HomeScreen(
     var presence by remember { mutableStateOf(false) }
     if (presence) PresenceDialog(state, onDismiss = { presence = false })
 
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var user by remember { mutableStateOf(Auth.userName(context)) }
-    var loginHelp by remember { mutableStateOf(false) }
-    if (loginHelp) {
-        AlertDialog(
-            onDismissRequest = { loginHelp = false },
-            title = { Text("Inloggning är inte inställd") },
-            text = { Text("Den här versionen av appen är byggd utan koppling till ett Firebase-projekt, så det går inte att logga in än.") },
-            confirmButton = { TextButton(onClick = { loginHelp = false }) { Text("OK") } },
-        )
-    }
-
     Scaffold(
         topBar = {
             Column(Modifier.statusBarsPadding()) {
@@ -130,23 +114,7 @@ fun HomeScreen(
                                 Entry("Bortaläge") { away = true }
                                 Entry("Hemma och borta") { presence = true }
                             }
-                            if (user == null) {
-                                Entry("Logga in med Google") {
-                                    if (Auth.configured(context)) {
-                                        scope.launch {
-                                            Auth.signIn(context)?.let { snackbar.showSnackbar(it) }
-                                            user = Auth.userName(context)
-                                        }
-                                    } else {
-                                        loginHelp = true
-                                    }
-                                }
-                            } else {
-                                Entry("Logga ut ($user)") {
-                                    Auth.signOut(context)
-                                    user = null
-                                }
-                            }
+                            if (user != null) Entry("Logga ut ($user)") { onSignOut() }
                             if (state.paired) Entry("Glöm hubben") { vm.forgetHub() }
                         }
                     }

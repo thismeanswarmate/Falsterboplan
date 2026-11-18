@@ -22,12 +22,19 @@ object Auth {
         runCatching { FirebaseApp.getApps(context).isNotEmpty() || FirebaseApp.initializeApp(context) != null }.getOrDefault(false) &&
             webClientId(context) != null
 
-    /** Name (or e-mail) of whoever is signed in, or null. */
+    /** Name (or e-mail) of whoever is signed in, or null when nobody is. */
     fun userName(context: Context): String? {
         if (!configured(context)) return null
         val user = FirebaseAuth.getInstance().currentUser ?: return null
-        return user.displayName?.takeIf { it.isNotBlank() } ?: user.email
+        return user.displayName?.takeIf { it.isNotBlank() } ?: user.email ?: "Google-konto"
     }
+
+    /**
+     * Whether the app may be used. Firebase remembers the signed-in account on the phone, so this
+     * works without internet after the first sign-in. A build without Firebase has no way to sign
+     * in, so it is not locked.
+     */
+    fun allowed(context: Context): Boolean = !configured(context) || FirebaseAuth.getInstance().currentUser != null
 
     /** The "web client" id that the google-services plugin generates from google-services.json. */
     private fun webClientId(context: Context): String? {

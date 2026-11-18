@@ -27,7 +27,8 @@ bought items are remembered as "buy again" suggestions. Stored on the phone.
 **Home screen widget**: lights per room with brightness steps and warmth/colour swatches, and the
 to-buy list.
 
-**Google sign-in** (menu): Firebase Authentication against the `falsterboplan-6b048` project,
+**Google sign-in**: required before the app or widget can be used (sign out from the menu).
+Firebase Authentication against the `falsterboplan-6b048` project,
 configured by `app/google-services.json`. The Firebase console must list the debug key's SHA-1
 (below) for the Android app.
 

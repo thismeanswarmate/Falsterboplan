@@ -59,6 +59,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.falsterboplan.lights.MainActivity
 import com.falsterboplan.lights.R
+import com.falsterboplan.lights.auth.Auth
 import com.falsterboplan.lights.data.BuyItem
 import com.falsterboplan.lights.data.Device
 import com.falsterboplan.lights.data.Hub
@@ -181,6 +182,7 @@ class LightsWidget : GlanceAppWidget() {
             val prefs = currentState<Preferences>()
             val items by shopping.collectAsState()
             WidgetContent(
+                locked = !Auth.allowed(context),
                 snapshot = WidgetUpdater.decode(prefs),
                 tab = prefs[WidgetUpdater.TAB] ?: TAB_LIGHTS,
                 expanded = prefs[WidgetUpdater.EXPANDED],
@@ -220,6 +222,8 @@ internal fun WidgetContent(
     tab: String,
     expanded: String?,
     toBuy: List<BuyItem>,
+    /** Nobody is signed in: show only a prompt to open the app. */
+    locked: Boolean = false,
     /** Lay rows out without a scrolling list, for rendering the widget to an image in tests. */
     preview: Boolean = false,
 ) {
@@ -232,6 +236,15 @@ internal fun WidgetContent(
             .cornerRadius(28.dp)
             .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
     ) {
+        if (locked) {
+            Image(
+                provider = ImageProvider(R.drawable.house),
+                contentDescription = null,
+                modifier = GlanceModifier.size(56.dp).padding(bottom = 8.dp),
+            )
+            Hint("Logga in i appen för att använda widgeten.", openApp)
+            return@Column
+        }
         Row(GlanceModifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Image(
                 provider = ImageProvider(R.drawable.house),
