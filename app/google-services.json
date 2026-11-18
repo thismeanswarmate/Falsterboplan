@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "546450827322",
+    "project_id": "falsterboplan-6b048",
+    "storage_bucket": "falsterboplan-6b048.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:546450827322:android:f2217ddda46430f32cad03",
+        "android_client_info": {
+          "package_name": "com.falsterboplan.lights"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "546450827322-cr4k6f9kmn4nc9frp28ve6j78hgt6i0l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.falsterboplan.lights",
+            "certificate_hash": "c6d46b30483686b8f9457b77b9fe0824ad15b577"
+          }
+        },
+        {
+          "client_id": "546450827322-mo23kcbt90bf8qti4gt0lso04c5a7fhh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmXLcacbN5d8C1zFLVOtNSdbSAqkc-AQY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "546450827322-mo23kcbt90bf8qti4gt0lso04c5a7fhh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

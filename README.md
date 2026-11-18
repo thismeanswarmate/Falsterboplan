@@ -27,9 +27,9 @@ bought items are remembered as "buy again" suggestions. Stored on the phone.
 **Home screen widget**: lights per room with brightness steps and warmth/colour swatches, and the
 to-buy list.
 
-**Google sign-in** (menu): Firebase Authentication. Put the Firebase project's
-`google-services.json` in `app/` and register the debug key's SHA-1 (below) in the Firebase
-console. Without the file the app builds and the menu entry explains that login isn't set up.
+**Google sign-in** (menu): Firebase Authentication against the `falsterboplan-6b048` project,
+configured by `app/google-services.json`. The Firebase console must list the debug key's SHA-1
+(below) for the Android app.
 
 ## Build
 
