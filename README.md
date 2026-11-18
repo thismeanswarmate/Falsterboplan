@@ -1,6 +1,6 @@
 # Falsterboplan
 
-"Home app": an Android app for the home. Its Lights tab controls IKEA smart lights through a DIRIGERA hub, over the hub's local
+An Android app for the home. Its Lights tab controls IKEA smart lights through a DIRIGERA hub, over the hub's local
 network API. Nothing goes through the cloud; the phone has to be on the same Wi-Fi as the hub.
 
 ## What it does
@@ -10,6 +10,8 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
 - Lists lights grouped by room, with a switch per room
 - Per light: on/off and brightness; tap a light for warmth, colour and colour intensity where the
   bulb supports them
+- Rename a light, add a room, and move a light to another room (tap a light; rooms are also
+  under the menu)
 - Updates live when lights are changed from elsewhere (remotes, the IKEA app)
 - **Timers**: turn a light or a room on/off in N minutes. Fired by the phone, so the phone has to
   be on the home Wi-Fi when the timer ends
@@ -20,6 +22,7 @@ network API. Nothing goes through the cloud; the phone has to be on the same Wi-
   Home smart app, because no way for a third-party app to pass that code to the hub is known
 - **To buy** tab: a shopping list with High/Medium/Low priority; tick items off when bought.
   Kept on the phone
+- **Vacuum** tab: a disabled placeholder, nothing behind it yet
 - **Home screen widget**: a switch per room
 
 ## Build

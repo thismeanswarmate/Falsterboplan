@@ -78,7 +78,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import com.falsterboplan.lights.data.Device
+import com.falsterboplan.lights.data.Room
 import kotlin.math.roundToInt
 
 private const val NO_ROOM = ""
@@ -93,23 +96,34 @@ private sealed interface Row {
         val onCount: Int,
     ) : Row
     data class Light(val device: Device) : Row
+    data class Empty(val roomId: String) : Row
 }
 
-private fun rowsOf(lights: List<Device>): List<Row> = lights
-    .groupBy { it.room?.id ?: NO_ROOM }
-    .toList()
-    .sortedWith(compareBy({ it.first == NO_ROOM }, { it.second.first().room?.name.orEmpty().lowercase() }))
-    .flatMap { (roomId, members) ->
+private fun rowsOf(lights: List<Device>, rooms: List<Room>): List<Row> {
+    val byRoom = lights.groupBy { it.room?.id ?: NO_ROOM }
+    // Every room the hub knows, plus any that only appear on a light, then lights with no room.
+    val names = LinkedHashMap<String, String>()
+    rooms.forEach { names[it.id] = it.name }
+    lights.forEach { l -> l.room?.let { names.putIfAbsent(it.id, it.name) } }
+    val ordered = names.entries.sortedBy { it.value.lowercase() }.map { it.key to it.value } +
+        (if (NO_ROOM in byRoom) listOf(NO_ROOM to "No room") else emptyList())
+    return ordered.flatMap { (roomId, name) ->
+        val members = byRoom[roomId].orEmpty()
         val header = Row.RoomHeader(
             id = roomId,
-            name = members.first().room?.name?.ifBlank { null } ?: "No room",
+            name = name.ifBlank { "Room" },
             anyOn = members.any { it.attributes.isOn && it.isReachable },
             canSwitch = roomId != NO_ROOM && members.any { it.isReachable },
             lightIds = members.map { it.id },
             onCount = members.count { it.attributes.isOn && it.isReachable },
         )
-        listOf(header) + members.sortedBy { it.name.lowercase() }.map { Row.Light(it) }
+        listOf(header) + if (members.isEmpty()) {
+            listOf(Row.Empty(roomId))
+        } else {
+            members.sortedBy { it.name.lowercase() }.map { Row.Light(it) }
+        }
     }
+}
 
 /** The Lights tab: rooms and lights, then timers and schedules. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -118,13 +132,19 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
     var timerTarget by remember { mutableStateOf<Target?>(null) }
     timerTarget?.let { TimerDialog(it, vm, onDismiss = { timerTarget = null }) }
 
+    var renaming by remember { mutableStateOf<Device?>(null) }
+    renaming?.let { RenameDialog(it, vm, onDismiss = { renaming = null }) }
+
+    var moving by remember { mutableStateOf<Device?>(null) }
+    moving?.let { MoveDialog(it, state.rooms, vm, onDismiss = { moving = null }) }
+
     Column(Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = state.loading,
             onRefresh = vm::refresh,
             modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
-            val rows = remember(state.lights) { rowsOf(state.lights) }
+            val rows = remember(state.lights, state.rooms) { rowsOf(state.lights, state.rooms) }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
@@ -141,7 +161,13 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
                 }
                 items(
                     rows,
-                    key = { if (it is Row.Light) "l:${it.device.id}" else "r:${(it as Row.RoomHeader).id}" },
+                    key = {
+                        when (it) {
+                            is Row.Light -> "l:${it.device.id}"
+                            is Row.RoomHeader -> "r:${it.id}"
+                            is Row.Empty -> "e:${it.roomId}"
+                        }
+                    },
                     contentType = { it is Row.Light },
                 ) { row ->
                     when (row) {
@@ -154,6 +180,14 @@ fun LightsTab(state: UiState, vm: MainViewModel) {
                             row.device,
                             vm,
                             onTimer = { timerTarget = Target(row.device.name, listOf(row.device.id)) },
+                            onRename = { renaming = row.device },
+                            onMove = { moving = row.device },
+                        )
+                        is Row.Empty -> Text(
+                            "No lights here yet. Open a light and choose Move to put it in this room.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp),
                         )
                     }
                 }
@@ -201,8 +235,15 @@ private fun RoomHeader(room: Row.RoomHeader, onToggle: (Boolean) -> Unit, onTime
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
+private fun LightCard(
+    device: Device,
+    vm: MainViewModel,
+    onTimer: () -> Unit,
+    onRename: () -> Unit,
+    onMove: () -> Unit,
+) {
     val attrs = device.attributes
     val on = attrs.isOn && device.isReachable
     var expanded by remember { mutableStateOf(false) }
@@ -318,9 +359,13 @@ private fun LightCard(device: Device, vm: MainViewModel, onTimer: () -> Unit) {
                             onCommit = { vm.setColor(device, hue.toDouble(), it.toDouble()) },
                         )
                     }
-                    TextButton(onClick = onTimer) {
-                        Icon(Icons.Outlined.Schedule, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                        Text("Timer or schedule")
+                    FlowRow(Modifier.padding(top = 4.dp)) {
+                        TextButton(onClick = onTimer) {
+                            Icon(Icons.Outlined.Schedule, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                            Text("Timer or schedule")
+                        }
+                        TextButton(onClick = onRename) { Text("Rename") }
+                        TextButton(onClick = onMove) { Text("Move") }
                     }
                 }
             }

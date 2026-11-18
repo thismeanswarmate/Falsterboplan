@@ -61,6 +61,9 @@ fun HomeScreen(state: UiState, vm: MainViewModel, shopping: ShoppingViewModel) {
         })
     }
 
+    var addRoom by remember { mutableStateOf(false) }
+    if (addRoom) NewRoomDialog(vm, onDismiss = { addRoom = false })
+
     Scaffold(
         topBar = {
             Column(Modifier.statusBarsPadding()) {
@@ -85,6 +88,13 @@ fun HomeScreen(state: UiState, vm: MainViewModel, shopping: ShoppingViewModel) {
                                     },
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Add a room") },
+                                    onClick = {
+                                        menu = false
+                                        addRoom = true
+                                    },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Forget hub") },
                                     onClick = {
                                         menu = false
@@ -105,6 +115,19 @@ fun HomeScreen(state: UiState, vm: MainViewModel, shopping: ShoppingViewModel) {
                             text = { Text(title, style = MaterialTheme.typography.titleMedium) },
                         )
                     }
+                    // Placeholder for vacuum control; nothing behind it yet.
+                    Tab(
+                        selected = false,
+                        onClick = {},
+                        enabled = false,
+                        text = {
+                            Text(
+                                "Vacuum",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                            )
+                        },
+                    )
                 }
             }
         },

@@ -113,6 +113,30 @@ class DirigeraClient(
         call(authed(url).patch(patchBody(attributes)).build())
     }
 
+    // ---- Names and rooms ---------------------------------------------
+
+    suspend fun rename(deviceId: String, name: String) =
+        setDevice(deviceId, buildJsonObject { put("customName", name) })
+
+    suspend fun rooms(): List<Room> = HubJson.decodeFromString(call(authed(url("rooms")).build()))
+
+    /** Creates a room and returns its id. The hub requires an icon and colour from its own set. */
+    suspend fun createRoom(name: String): String {
+        val body = buildJsonObject {
+            put("name", name)
+            put("icon", "rooms_home")
+            put("color", "ikea_green_no_65")
+        }.toString().toRequestBody(JSON)
+        return HubJson.decodeFromString<CreatedId>(call(authed(url("rooms")).post(body).build())).id
+    }
+
+    suspend fun moveToRoom(roomId: String, deviceIds: List<String>) {
+        val body = buildJsonObject {
+            putJsonArray("deviceIds") { deviceIds.forEach { add(it) } }
+        }.toString().toRequestBody(JSON)
+        call(authed(url("rooms/$roomId/devices")).patch(body).build())
+    }
+
     // ---- Schedules (stored on the hub as scenes with a time trigger) -----
 
     suspend fun scenes(): List<Scene> {

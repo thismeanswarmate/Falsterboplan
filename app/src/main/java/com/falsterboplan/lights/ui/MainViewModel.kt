@@ -10,6 +10,7 @@ import com.falsterboplan.lights.data.DirigeraClient
 import com.falsterboplan.lights.data.DiscoveredHub
 import com.falsterboplan.lights.data.Hub
 import com.falsterboplan.lights.data.HubDiscovery
+import com.falsterboplan.lights.data.Room
 import com.falsterboplan.lights.data.Scene
 import com.falsterboplan.lights.data.ScheduleStore
 import com.falsterboplan.lights.timer.LightTimer
@@ -61,6 +62,7 @@ data class UiState(
     val discovered: List<DiscoveredHub> = emptyList(),
     val pairing: Pairing = Pairing.Idle,
     val lights: List<Device> = emptyList(),
+    val rooms: List<Room> = emptyList(),
     val loading: Boolean = false,
     val timers: List<LightTimer> = emptyList(),
     val schedules: List<Scene> = emptyList(),
@@ -198,6 +200,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             WidgetUpdater.push(getApplication(), WidgetSnapshot.of(lights))
+            // Rooms are listed separately so that rooms without lights still show up.
+            runCatching { c.rooms() }.onSuccess { rooms -> _state.update { it.copy(rooms = rooms) } }
             loadSchedules(c)
         } catch (e: CancellationException) {
             throw e
@@ -269,6 +273,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Names and rooms ---------------------------------------------
+
+    fun renameLight(device: Device, name: String) {
+        val c = client ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || trimmed == device.attributes.customName) return
+        updateLocally(setOf(device.id)) { it.copy(customName = trimmed) }
+        send { c.rename(device.id, trimmed) }
+    }
+
+    fun moveLight(device: Device, room: Room) {
+        val c = client ?: return
+        if (device.room?.id == room.id) return
+        _state.update { s -> s.copy(lights = s.lights.map { if (it.id == device.id) it.copy(room = room) else it }) }
+        send { c.moveToRoom(room.id, listOf(device.id)) }
+    }
+
+    /** Creates a room on the hub and, when [andMove] is given, puts that light in it. */
+    fun addRoom(name: String, andMove: Device? = null) {
+        val c = client ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        send {
+            val id = c.createRoom(trimmed)
+            if (andMove != null) c.moveToRoom(id, listOf(andMove.id))
+            load(c, showSpinner = false)
+        }
+    }
+
     // ---- Timers (fired by this phone) ---------------------------------
 
     fun addTimer(label: String, lightIds: List<String>, on: Boolean, minutes: Int) {
@@ -306,6 +339,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val time = "%02d:%02d".format(hour, minute)
             val id = c.createSchedule("$label ${if (on) "on" else "off"} $time", on, time, days, lightIds)
             scheduleStore.add(id)
+            // Rooms are listed separately so that rooms without lights still show up.
+            runCatching { c.rooms() }.onSuccess { rooms -> _state.update { it.copy(rooms = rooms) } }
             loadSchedules(c)
         }
     }
@@ -319,6 +354,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (e.status != 404) throw e // already removed from the IKEA app
             }
             scheduleStore.remove(id)
+            // Rooms are listed separately so that rooms without lights still show up.
+            runCatching { c.rooms() }.onSuccess { rooms -> _state.update { it.copy(rooms = rooms) } }
             loadSchedules(c)
         }
     }

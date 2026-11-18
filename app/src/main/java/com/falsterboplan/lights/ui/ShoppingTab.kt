@@ -121,9 +121,15 @@ fun ShoppingTab(vm: ShoppingViewModel) {
                         ),
                         keyboardActions = KeyboardActions(onDone = { add() }),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Priority.entries.forEach { p ->
-                            PriorityChip(p, selected = p == priority, onClick = { priority = p }, modifier = Modifier.weight(1f))
+                            // Share the width by word length so the longest label ("Medium") fits on one line.
+                            PriorityChip(
+                                p,
+                                selected = p == priority,
+                                onClick = { priority = p },
+                                modifier = Modifier.weight(p.label.length + 3f),
+                            )
                         }
                     }
                     Button(
@@ -176,7 +182,7 @@ private fun PriorityChip(priority: Priority, selected: Boolean, onClick: () -> U
             .background(if (selected) Brand.Sand else Color.Transparent)
             .clickable(role = Role.RadioButton, onClick = onClick)
             .semantics { contentDescription = "${priority.label} priority" + if (selected) ", selected" else "" }
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -184,6 +190,8 @@ private fun PriorityChip(priority: Priority, selected: Boolean, onClick: () -> U
         Text(
             priority.label,
             style = if (selected) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            softWrap = false,
             modifier = Modifier.padding(start = 6.dp),
         )
     }
@@ -220,7 +228,13 @@ private fun ItemRow(item: BuyItem, vm: ShoppingViewModel, modifier: Modifier = M
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.size(12.dp).background(item.priority.dot(), CircleShape))
-                    Text(item.priority.label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 6.dp))
+                    Text(
+                        item.priority.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
                 }
             }
             IconButton(onClick = { vm.remove(item.id) }) {

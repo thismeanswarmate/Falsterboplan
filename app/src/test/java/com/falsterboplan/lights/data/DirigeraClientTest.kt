@@ -172,6 +172,32 @@ class DirigeraClientTest {
     }
 
     @Test
+    fun renameCreateRoomAndMove() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(202))
+        server.enqueue(MockResponse().setBody("""[{"id":"room-1","name":"Living room","color":"ikea_green_no_65","icon":"rooms_sofa"}]"""))
+        server.enqueue(MockResponse().setBody("""{"id":"room-2"}"""))
+        server.enqueue(MockResponse().setResponseCode(200))
+
+        client.rename("light-1", "Reading lamp")
+        assertEquals("""[{"attributes":{"customName":"Reading lamp"}}]""", server.takeRequest().body.readUtf8())
+
+        assertEquals(listOf(Room("room-1", "Living room")), client.rooms())
+        assertEquals("/v1/rooms", server.takeRequest().path)
+
+        assertEquals("room-2", client.createRoom("Hallway"))
+        val create = server.takeRequest()
+        assertEquals("POST", create.method)
+        assertEquals("/v1/rooms", create.path)
+        assertEquals("""{"name":"Hallway","icon":"rooms_home","color":"ikea_green_no_65"}""", create.body.readUtf8())
+
+        client.moveToRoom("room-2", listOf("light-1"))
+        val move = server.takeRequest()
+        assertEquals("PATCH", move.method)
+        assertEquals("/v1/rooms/room-2/devices", move.path)
+        assertEquals("""{"deviceIds":["light-1"]}""", move.body.readUtf8())
+    }
+
+    @Test
     fun errorsSurfaceStatus() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401).setBody("nope"))
         val error = runCatching { client.lights() }.exceptionOrNull()
