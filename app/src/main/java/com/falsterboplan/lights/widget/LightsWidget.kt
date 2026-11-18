@@ -52,6 +52,7 @@ import androidx.glance.layout.width
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
 import androidx.glance.state.PreferencesGlanceStateDefinition
+import androidx.glance.text.FontFamily
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -136,6 +137,7 @@ private val InkSoft = Color(0xFF7A5549)
 private val Pink = Color(0xFFE94E76)
 private val Clay = Color(0xFFC6A49A)
 private val Mint = Color(0xFFC5E5D8)
+private val CardColor = Color(0xFFFFF8EC)
 
 private const val TAB_LIGHTS = "lights"
 private const val TAB_BUY = "buy"
@@ -178,7 +180,7 @@ class LightsWidget : GlanceAppWidget() {
         provideContent {
             val prefs = currentState<Preferences>()
             val items by shopping.collectAsState()
-            Content(
+            WidgetContent(
                 snapshot = WidgetUpdater.decode(prefs),
                 tab = prefs[WidgetUpdater.TAB] ?: TAB_LIGHTS,
                 expanded = prefs[WidgetUpdater.EXPANDED],
@@ -188,39 +190,73 @@ class LightsWidget : GlanceAppWidget() {
     }
 }
 
-private fun text(size: Int, color: Color = Ink, bold: Boolean = false) =
-    TextStyle(color = ColorProvider(color), fontSize = size.sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
+private fun text(size: Int, color: Color = Ink, bold: Boolean = false, serif: Boolean = false) = TextStyle(
+    color = ColorProvider(color),
+    fontSize = size.sp,
+    fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+    // Widgets can't load the app's own typefaces; the system serif stands in for the display face.
+    fontFamily = if (serif) FontFamily.Serif else null,
+)
+
+/** The rounded off-white panel the app uses for each light, here used for each row. */
+@Composable
+private fun Panel(modifier: GlanceModifier = GlanceModifier, content: @Composable () -> Unit) {
+    Column(GlanceModifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Column(
+            modifier = modifier.fillMaxWidth().background(ColorProvider(CardColor)).cornerRadius(20.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) { content() }
+    }
+}
 
 @Composable
-private fun Content(snapshot: WidgetSnapshot?, tab: String, expanded: String?, toBuy: List<BuyItem>) {
+private fun Caption(label: String) {
+    Text(label.uppercase(), style = text(11, InkSoft, bold = true), modifier = GlanceModifier.padding(top = 8.dp))
+}
+
+@Composable
+internal fun WidgetContent(
+    snapshot: WidgetSnapshot?,
+    tab: String,
+    expanded: String?,
+    toBuy: List<BuyItem>,
+    /** Lay rows out without a scrolling list, for rendering the widget to an image in tests. */
+    preview: Boolean = false,
+) {
     val openApp = actionStartActivity<MainActivity>()
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .appWidgetBackground()
             .background(ColorProvider(Cream))
-            .cornerRadius(24.dp)
-            .padding(12.dp),
+            .cornerRadius(28.dp)
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
     ) {
-        Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(GlanceModifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Image(
                 provider = ImageProvider(R.drawable.house),
                 contentDescription = "Öppna Falsterboplan",
-                modifier = GlanceModifier.size(36.dp).clickable(openApp),
+                modifier = GlanceModifier.size(44.dp).clickable(openApp),
             )
             TabLabel("Lampor", selected = tab == TAB_LIGHTS, target = TAB_LIGHTS)
             TabLabel(if (toBuy.isEmpty()) "Att köpa" else "Att köpa (${toBuy.size})", selected = tab == TAB_BUY, target = TAB_BUY)
             Spacer(GlanceModifier.defaultWeight())
             if (tab == TAB_LIGHTS) {
-                Image(
-                    provider = ImageProvider(R.drawable.ic_refresh),
-                    contentDescription = "Uppdatera",
-                    colorFilter = ColorFilter.tint(ColorProvider(Ink)),
-                    modifier = GlanceModifier.size(32.dp).padding(4.dp).clickable(actionRunCallback<RefreshAction>()),
-                )
+                Box(
+                    modifier = GlanceModifier.size(36.dp).background(ColorProvider(CardColor)).cornerRadius(18.dp)
+                        .clickable(actionRunCallback<RefreshAction>()),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        provider = ImageProvider(R.drawable.ic_refresh),
+                        contentDescription = "Uppdatera",
+                        colorFilter = ColorFilter.tint(ColorProvider(Ink)),
+                        modifier = GlanceModifier.size(20.dp),
+                    )
+                }
             }
         }
-        if (tab == TAB_BUY) BuyList(toBuy) else Lights(snapshot, expanded, openApp)
+        if (tab == TAB_BUY) BuyList(toBuy, preview) else Lights(snapshot, expanded, openApp, preview)
     }
 }
 
@@ -228,38 +264,71 @@ private fun Content(snapshot: WidgetSnapshot?, tab: String, expanded: String?, t
 private fun TabLabel(label: String, selected: Boolean, target: String) {
     Column(
         modifier = GlanceModifier
-            .padding(start = 10.dp, top = 4.dp, bottom = 2.dp)
+            .padding(start = 12.dp, top = 6.dp, bottom = 2.dp)
             .clickable(actionRunCallback<TabAction>(actionParametersOf(TabAction.TAB to target))),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(label, style = text(16, if (selected) Ink else InkSoft, bold = selected), maxLines = 1)
-        Box(GlanceModifier.width(28.dp).height(3.dp).background(ColorProvider(if (selected) Pink else Cream))) {}
+        Text(label, style = text(15, if (selected) Ink else InkSoft, bold = true), maxLines = 1)
+        Spacer(GlanceModifier.height(4.dp))
+        Box(GlanceModifier.width(36.dp).height(3.dp).cornerRadius(2.dp).background(ColorProvider(if (selected) Pink else Cream))) {}
+    }
+}
+
+/** A scrolling list of rows, with an optional last row. */
+@Composable
+private fun <T> Rows(
+    entries: List<T>,
+    id: (T) -> Long,
+    preview: Boolean,
+    footer: (@Composable () -> Unit)? = null,
+    row: @Composable (T) -> Unit,
+) {
+    if (preview) {
+        Column {
+            entries.forEach { row(it) }
+            footer?.invoke()
+        }
+    } else {
+        LazyColumn {
+            items(entries, itemId = id) { row(it) }
+            if (footer != null) item { footer() }
+        }
     }
 }
 
 @Composable
-private fun Lights(snapshot: WidgetSnapshot?, expanded: String?, openApp: Action) {
+private fun Hint(message: String, action: Action? = null) {
+    Panel(if (action != null) GlanceModifier.clickable(action) else GlanceModifier) {
+        Text(message, style = text(14, InkSoft))
+    }
+}
+
+@Composable
+private fun Lights(snapshot: WidgetSnapshot?, expanded: String?, openApp: Action, preview: Boolean) {
     when {
-        snapshot == null -> Text("Laddar…", style = text(14, InkSoft))
-        !snapshot.paired ->
-            Text("Öppna appen för att ansluta hubben.", style = text(14, InkSoft), modifier = GlanceModifier.clickable(openApp))
-        snapshot.rooms.isEmpty() -> Text("Inga lampor hittades.", style = text(14, InkSoft))
-        else -> LazyColumn {
-            items(snapshot.rooms, itemId = { it.key.hashCode().toLong() }) { room -> RoomItem(room, open = expanded == room.key) }
-        }
+        snapshot == null -> Hint("Laddar…")
+        !snapshot.paired -> Hint("Öppna appen för att ansluta hubben.", openApp)
+        snapshot.rooms.isEmpty() -> Hint("Inga lampor hittades.")
+        else -> Rows(snapshot.rooms, { it.key.hashCode().toLong() }, preview) { room -> RoomItem(room, open = expanded == room.key) }
     }
 }
 
 @Composable
 private fun RoomItem(room: WidgetRoom, open: Boolean) {
     val params = actionParametersOf(RoomAction.ROOM to room.key)
-    Column(GlanceModifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Panel {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
                 modifier = GlanceModifier.defaultWeight().clickable(actionRunCallback<ExpandAction>(params)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(GlanceModifier.defaultWeight()) {
-                    Text(room.name, maxLines = 1, style = text(16, bold = true))
+                Image(
+                    provider = ImageProvider(if (room.anyOn) R.drawable.bulb_on else R.drawable.bulb_off),
+                    contentDescription = null,
+                    modifier = GlanceModifier.size(40.dp),
+                )
+                Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
+                    Text(room.name, maxLines = 1, style = text(17, bold = true, serif = true))
                     Text(
                         if (!room.anyOn) "Av" else room.level?.let { "På · $it %" } ?: "På",
                         style = text(12, InkSoft),
@@ -284,31 +353,37 @@ private fun RoomItem(room: WidgetRoom, open: Boolean) {
             )
         }
         if (open && !room.anyOn) {
-            Text("Tänd rummet för att ändra ljusstyrka och färg.", style = text(12, InkSoft))
+            Text("Tänd rummet för att ändra ljusstyrka och färg.", style = text(12, InkSoft), modifier = GlanceModifier.padding(top = 6.dp))
         }
         if (open && room.anyOn) {
-            if (room.level != null) BrightnessBar(room, room.level)
-            if (room.warmK != null && room.coolK != null || room.hasColor) Swatches(room)
+            if (room.level != null) {
+                Caption("Ljusstyrka")
+                BrightnessBar(room, room.level)
+            }
+            if (room.warmK != null && room.coolK != null || room.hasColor) {
+                Caption(if (room.hasColor) "Värme och färg" else "Värme")
+                Swatches(room)
+            }
         }
     }
 }
 
-/** Widgets can't hold a draggable slider, so brightness is five tappable steps drawn as a bar. */
+/** Widgets can't hold a draggable slider, so brightness is five tappable steps drawn as one bar. */
 @Composable
 private fun BrightnessBar(room: WidgetRoom, level: Int) {
-    Row(GlanceModifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         for (step in 1..5) {
             val value = step * 20
             Box(
                 modifier = GlanceModifier
                     .defaultWeight()
                     .height(36.dp)
-                    .padding(horizontal = 2.dp, vertical = 11.dp)
+                    .padding(horizontal = 2.dp, vertical = 12.dp)
                     .semantics { contentDescription = "Ljusstyrka $value procent" }
                     .clickable(adjust(room, "level", value)),
             ) {
                 Box(
-                    GlanceModifier.fillMaxSize().cornerRadius(7.dp)
+                    GlanceModifier.fillMaxSize().cornerRadius(6.dp)
                         .background(ColorProvider(if (level >= value - 10) Pink else Sand)),
                 ) {}
             }
@@ -335,13 +410,13 @@ private fun Swatches(room: WidgetRoom) {
 @Composable
 private fun androidx.glance.layout.RowScope.Swatch(name: String, color: Color, action: Action) {
     Box(
-        modifier = GlanceModifier.defaultWeight().height(36.dp)
+        modifier = GlanceModifier.defaultWeight().height(40.dp)
             .semantics { contentDescription = name }
             .clickable(action),
         contentAlignment = Alignment.Center,
     ) {
-        // A clay ring keeps the pale swatches visible on cream.
-        Box(GlanceModifier.size(26.dp).cornerRadius(13.dp).background(ColorProvider(Clay)), contentAlignment = Alignment.Center) {
+        // A sand ring keeps the pale swatches visible on the off-white panel.
+        Box(GlanceModifier.size(28.dp).cornerRadius(14.dp).background(ColorProvider(Sand)), contentAlignment = Alignment.Center) {
             Box(GlanceModifier.size(22.dp).cornerRadius(11.dp).background(ColorProvider(color))) {}
         }
     }
@@ -352,24 +427,28 @@ private fun adjust(room: WidgetRoom, kind: String, value: Int): Action = actionR
 )
 
 @Composable
-private fun BuyList(toBuy: List<BuyItem>) {
+private fun BuyList(toBuy: List<BuyItem>, preview: Boolean) {
     val add = actionStartActivity<MainActivity>(actionParametersOf(ActionParameters.Key<Int>(MainActivity.EXTRA_TAB) to 1))
     if (toBuy.isEmpty()) {
-        Text("Inget att köpa. Tryck för att lägga till.", style = text(14, InkSoft), modifier = GlanceModifier.clickable(add))
+        Hint("Inget att köpa just nu.")
+        AddButton(add)
         return
     }
-    LazyColumn {
-        items(toBuy, itemId = { it.id }) { item ->
-            Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+    Rows(toBuy, { it.id }, preview, footer = { AddButton(add) }) { item ->
+        Panel {
+            Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 CheckBox(
                     checked = false,
                     onCheckedChange = actionRunCallback<BoughtAction>(actionParametersOf(BoughtAction.ID to item.id)),
-                    text = item.title,
-                    style = text(15),
-                    maxLines = 2,
+                    text = "",
                     colors = CheckboxDefaults.colors(checkedColor = ColorProvider(Pink), uncheckedColor = ColorProvider(InkSoft)),
-                    modifier = GlanceModifier.defaultWeight(),
+                    modifier = GlanceModifier.semantics { contentDescription = "Köpt ${item.name}" },
                 )
+                Column(GlanceModifier.defaultWeight()) {
+                    Text(item.title, style = text(15, bold = true), maxLines = 2)
+                    val detail = listOf(item.category, item.note).filter { it.isNotEmpty() }.joinToString(" · ")
+                    if (detail.isNotEmpty()) Text(detail, style = text(12, InkSoft), maxLines = 1)
+                }
                 Box(
                     GlanceModifier.size(12.dp).cornerRadius(6.dp).background(
                         ColorProvider(
@@ -381,10 +460,20 @@ private fun BuyList(toBuy: List<BuyItem>) {
                         ),
                     ),
                 ) {}
+                Text(item.priority.label, style = text(12, InkSoft), modifier = GlanceModifier.padding(start = 6.dp))
             }
         }
-        item {
-            Text("Lägg till något…", style = text(14, InkSoft, bold = true), modifier = GlanceModifier.padding(top = 6.dp, bottom = 4.dp).clickable(add))
+    }
+}
+
+@Composable
+private fun AddButton(add: Action) {
+    Column(GlanceModifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Box(
+            modifier = GlanceModifier.fillMaxWidth().height(44.dp).background(ColorProvider(Pink)).cornerRadius(22.dp).clickable(add),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Lägg till", style = text(15, Color.White, bold = true))
         }
     }
 }
