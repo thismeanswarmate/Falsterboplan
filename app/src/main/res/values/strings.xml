@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">Falsterboplan</string>
-    <string name="widget_description">Lampor per rum med ljusstyrka och färg, och din inköpslista</string>
+    <string name="widget_description">Alla lampor med ljusstyrka och färg, och inköpslistan</string>
 </resources>

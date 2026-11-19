@@ -68,7 +68,6 @@ import com.falsterboplan.lights.data.HubJson
 import com.falsterboplan.lights.data.Priority
 import com.falsterboplan.lights.data.Shopping
 import com.falsterboplan.lights.data.forDisplay
-import com.falsterboplan.lights.data.setRoomOrEach
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -79,55 +78,47 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/** One lamp as the widget shows it. */
 @Serializable
-data class WidgetRoom(
-    /** Null for lights that aren't in a room. */
-    val id: String?,
+data class WidgetLight(
+    val id: String,
     val name: String,
-    val lightIds: List<String>,
-    val anyOn: Boolean,
-    /** Average brightness of the lights that are on, 1..100; null if none can dim. */
+    /** Room name, shown under the lamp's name; empty if the lamp is in no room. */
+    val room: String = "",
+    val on: Boolean = false,
+    val reachable: Boolean = true,
+    /** Brightness 1..100; null if the lamp can't dim. */
     val level: Int? = null,
-    /** Warmest and coolest Kelvin every warmth-capable light in the room accepts; null if none. */
+    /** Warmest and coolest Kelvin the lamp accepts; null if it can't change warmth. */
     val warmK: Int? = null,
     val coolK: Int? = null,
     val hasColor: Boolean = false,
-) {
-    val key get() = id ?: OTHER
-
-    companion object {
-        const val OTHER = "~other"
-    }
-}
+)
 
 @Serializable
-data class WidgetSnapshot(val paired: Boolean, val rooms: List<WidgetRoom> = emptyList()) {
+data class WidgetSnapshot(val paired: Boolean, val lights: List<WidgetLight> = emptyList()) {
     companion object {
+        /** Every lamp, grouped by room (lamps without a room last) and by name within a room. */
         fun of(lights: List<Device>): WidgetSnapshot = WidgetSnapshot(
             paired = true,
-            rooms = lights.filter { it.isReachable }
-                .groupBy { it.room?.id }
-                .map { (roomId, members) -> roomOf(roomId, members) }
-                .sortedWith(compareBy({ it.id == null }, { it.name.lowercase() })),
+            lights = lights
+                .sortedWith(compareBy({ it.room == null }, { it.room?.name.orEmpty().lowercase() }, { it.name.lowercase() }))
+                .map { device ->
+                    val range = device.temperatureRange
+                    val tunable = device.canSetTemperature && range.first < range.last
+                    WidgetLight(
+                        id = device.id,
+                        name = device.name,
+                        room = device.room?.name.orEmpty(),
+                        on = device.attributes.isOn && device.isReachable,
+                        reachable = device.isReachable,
+                        level = if (device.canDim) device.attributes.lightLevel ?: 100 else null,
+                        warmK = range.first.takeIf { tunable },
+                        coolK = range.last.takeIf { tunable },
+                        hasColor = device.canSetColor,
+                    )
+                },
         )
-
-        private fun roomOf(roomId: String?, members: List<Device>): WidgetRoom {
-            val levels = members.filter { it.canDim && it.attributes.isOn }.mapNotNull { it.attributes.lightLevel }
-            val tunable = members.filter { it.canSetTemperature }
-            val warm = tunable.maxOfOrNull { it.temperatureRange.first }
-            val cool = tunable.minOfOrNull { it.temperatureRange.last }
-            val hasRange = warm != null && cool != null && warm < cool
-            return WidgetRoom(
-                id = roomId,
-                name = members.first().room?.name?.ifBlank { null } ?: "Övriga lampor",
-                lightIds = members.map { it.id },
-                anyOn = members.any { it.attributes.isOn },
-                level = if (members.any { it.canDim }) levels.takeIf { it.isNotEmpty() }?.average()?.toInt() ?: 100 else null,
-                warmK = warm.takeIf { hasRange },
-                coolK = cool.takeIf { hasRange },
-                hasColor = members.any { it.canSetColor },
-            )
-        }
     }
 }
 
@@ -324,61 +315,77 @@ private fun Lights(snapshot: WidgetSnapshot?, expanded: String?, openApp: Action
     when {
         snapshot == null -> Hint("Laddar…")
         !snapshot.paired -> Hint("Öppna appen för att ansluta hubben.", openApp)
-        snapshot.rooms.isEmpty() -> Hint("Inga lampor hittades.")
-        else -> Rows(snapshot.rooms, { it.key.hashCode().toLong() }, preview) { room -> RoomItem(room, open = expanded == room.key) }
+        snapshot.lights.isEmpty() -> Hint("Inga lampor hittades.")
+        else -> Rows(snapshot.lights, { it.id.hashCode().toLong() }, preview) { light -> LightItem(light, open = expanded == light.id) }
     }
 }
 
 @Composable
-private fun RoomItem(room: WidgetRoom, open: Boolean) {
-    val params = actionParametersOf(RoomAction.ROOM to room.key)
+private fun LightItem(light: WidgetLight, open: Boolean) {
+    val params = actionParametersOf(LightAction.LIGHT to light.id)
+    val adjustable = light.level != null || light.warmK != null || light.hasColor
+    val status = when {
+        !light.reachable -> "Ingen kontakt"
+        !light.on -> "Av"
+        light.level != null -> "På · ${light.level} %"
+        else -> "På"
+    }
     Panel {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
-                modifier = GlanceModifier.defaultWeight().clickable(actionRunCallback<ExpandAction>(params)),
+                modifier = if (light.reachable && adjustable) {
+                    GlanceModifier.defaultWeight().clickable(actionRunCallback<ExpandAction>(params))
+                } else {
+                    GlanceModifier.defaultWeight()
+                },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Image(
-                    provider = ImageProvider(if (room.anyOn) R.drawable.bulb_on else R.drawable.bulb_off),
+                    provider = ImageProvider(if (light.on) R.drawable.bulb_on else R.drawable.bulb_off),
                     contentDescription = null,
                     modifier = GlanceModifier.size(40.dp),
                 )
                 Column(GlanceModifier.defaultWeight().padding(start = 8.dp)) {
-                    Text(room.name, maxLines = 1, style = text(17, bold = true, serif = true))
+                    Text(light.name, maxLines = 1, style = text(16, if (light.reachable) Ink else InkSoft, bold = true, serif = true))
                     Text(
-                        if (!room.anyOn) "Av" else room.level?.let { "På · $it %" } ?: "På",
+                        if (light.room.isEmpty()) status else "${light.room} · $status",
+                        maxLines = 1,
                         style = text(12, InkSoft),
                     )
                 }
-                Image(
-                    provider = ImageProvider(if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
-                    contentDescription = if (open) "Dölj ljusstyrka och färg" else "Ljusstyrka och färg",
-                    colorFilter = ColorFilter.tint(ColorProvider(InkSoft)),
-                    modifier = GlanceModifier.size(28.dp).padding(2.dp),
+                if (light.reachable && adjustable) {
+                    Image(
+                        provider = ImageProvider(if (open) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
+                        contentDescription = if (open) "Dölj ljusstyrka och färg" else "Ljusstyrka och färg",
+                        colorFilter = ColorFilter.tint(ColorProvider(InkSoft)),
+                        modifier = GlanceModifier.size(28.dp).padding(2.dp),
+                    )
+                }
+            }
+            if (light.reachable) {
+                Switch(
+                    checked = light.on,
+                    onCheckedChange = actionRunCallback<ToggleLightAction>(params),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = ColorProvider(Color.White),
+                        uncheckedThumbColor = ColorProvider(Color.White),
+                        checkedTrackColor = ColorProvider(Pink),
+                        uncheckedTrackColor = ColorProvider(Clay),
+                    ),
                 )
             }
-            Switch(
-                checked = room.anyOn,
-                onCheckedChange = actionRunCallback<ToggleRoomAction>(params),
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = ColorProvider(Color.White),
-                    uncheckedThumbColor = ColorProvider(Color.White),
-                    checkedTrackColor = ColorProvider(Pink),
-                    uncheckedTrackColor = ColorProvider(Clay),
-                ),
-            )
         }
-        if (open && !room.anyOn) {
-            Text("Tänd rummet för att ändra ljusstyrka och färg.", style = text(12, InkSoft), modifier = GlanceModifier.padding(top = 6.dp))
+        if (open && light.reachable && !light.on) {
+            Text("Tänd lampan för att ändra ljusstyrka och färg.", style = text(12, InkSoft), modifier = GlanceModifier.padding(top = 6.dp))
         }
-        if (open && room.anyOn) {
-            if (room.level != null) {
+        if (open && light.on) {
+            if (light.level != null) {
                 Caption("Ljusstyrka")
-                BrightnessBar(room, room.level)
+                BrightnessBar(light, light.level)
             }
-            if (room.warmK != null && room.coolK != null || room.hasColor) {
-                Caption(if (room.hasColor) "Värme och färg" else "Värme")
-                Swatches(room)
+            if (light.warmK != null && light.coolK != null || light.hasColor) {
+                Caption(if (light.hasColor) "Värme och färg" else "Värme")
+                Swatches(light)
             }
         }
     }
@@ -386,7 +393,7 @@ private fun RoomItem(room: WidgetRoom, open: Boolean) {
 
 /** Widgets can't hold a draggable slider, so brightness is five tappable steps drawn as one bar. */
 @Composable
-private fun BrightnessBar(room: WidgetRoom, level: Int) {
+private fun BrightnessBar(light: WidgetLight, level: Int) {
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         for (step in 1..5) {
             val value = step * 20
@@ -396,7 +403,7 @@ private fun BrightnessBar(room: WidgetRoom, level: Int) {
                     .height(36.dp)
                     .padding(horizontal = 2.dp, vertical = 12.dp)
                     .semantics { contentDescription = "Ljusstyrka $value procent" }
-                    .clickable(adjust(room, "level", value)),
+                    .clickable(adjust(light, "level", value)),
             ) {
                 Box(
                     GlanceModifier.fillMaxSize().cornerRadius(6.dp)
@@ -408,17 +415,17 @@ private fun BrightnessBar(room: WidgetRoom, level: Int) {
 }
 
 @Composable
-private fun Swatches(room: WidgetRoom) {
+private fun Swatches(light: WidgetLight) {
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        val warm = room.warmK
-        val cool = room.coolK
+        val warm = light.warmK
+        val cool = light.coolK
         if (warm != null && cool != null) {
-            Swatch("Varmvit", Color(0xFFFFC870), adjust(room, "temp", warm))
-            Swatch("Neutralvit", Color(0xFFFFF3DD), adjust(room, "temp", (warm + cool) / 2))
-            Swatch("Kallvit", Color(0xFFBFD9FF), adjust(room, "temp", cool))
+            Swatch("Varmvit", Color(0xFFFFC870), adjust(light, "temp", warm))
+            Swatch("Neutralvit", Color(0xFFFFF3DD), adjust(light, "temp", (warm + cool) / 2))
+            Swatch("Kallvit", Color(0xFFBFD9FF), adjust(light, "temp", cool))
         }
-        if (room.hasColor) {
-            HUES.forEach { (name, hue) -> Swatch(name, Color.hsv(hue.toFloat(), 0.7f, 1f), adjust(room, "hue", hue)) }
+        if (light.hasColor) {
+            HUES.forEach { (name, hue) -> Swatch(name, Color.hsv(hue.toFloat(), 0.7f, 1f), adjust(light, "hue", hue)) }
         }
     }
 }
@@ -438,8 +445,8 @@ private fun androidx.glance.layout.RowScope.Swatch(name: String, color: Color, a
     }
 }
 
-private fun adjust(room: WidgetRoom, kind: String, value: Int): Action = actionRunCallback<AdjustRoomAction>(
-    actionParametersOf(RoomAction.ROOM to room.key, AdjustRoomAction.KIND to kind, AdjustRoomAction.VALUE to value),
+private fun adjust(light: WidgetLight, kind: String, value: Int): Action = actionRunCallback<AdjustLightAction>(
+    actionParametersOf(LightAction.LIGHT to light.id, AdjustLightAction.KIND to kind, AdjustLightAction.VALUE to value),
 )
 
 @Composable
@@ -515,52 +522,49 @@ class TabAction : ActionCallback {
 
 class ExpandAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        val room = parameters[RoomAction.ROOM] ?: return
+        val light = parameters[LightAction.LIGHT] ?: return
         updateAppWidgetState(context, glanceId) { prefs ->
-            if (prefs[WidgetUpdater.EXPANDED] == room) prefs.remove(WidgetUpdater.EXPANDED) else prefs[WidgetUpdater.EXPANDED] = room
+            if (prefs[WidgetUpdater.EXPANDED] == light) prefs.remove(WidgetUpdater.EXPANDED) else prefs[WidgetUpdater.EXPANDED] = light
         }
         LightsWidget().update(context, glanceId)
     }
 }
 
-/** Shared plumbing for actions on a room: show the change at once, tell the hub, then show the truth. */
-object RoomAction {
-    val ROOM = ActionParameters.Key<String>("room")
+/** Shared plumbing for actions on a lamp: show the change at once, tell the hub, then show the truth. */
+object LightAction {
+    val LIGHT = ActionParameters.Key<String>("light")
 
     suspend fun run(
         context: Context,
         glanceId: GlanceId,
-        roomKey: String,
+        lightId: String,
         attributes: JsonObject,
-        optimistic: (WidgetRoom) -> WidgetRoom,
+        optimistic: (WidgetLight) -> WidgetLight,
     ) {
         val client = Hub.client(context) ?: return WidgetUpdater.refresh(context)
-        var room: WidgetRoom? = null
         updateAppWidgetState(context, glanceId) { prefs ->
             val snapshot = WidgetUpdater.decode(prefs) ?: return@updateAppWidgetState
-            room = snapshot.rooms.firstOrNull { it.key == roomKey }
             prefs[WidgetUpdater.SNAPSHOT] = HubJson.encodeToString(
-                snapshot.copy(rooms = snapshot.rooms.map { if (it.key == roomKey) optimistic(it) else it }),
+                snapshot.copy(lights = snapshot.lights.map { if (it.id == lightId) optimistic(it) else it }),
             )
         }
         LightsWidget().update(context, glanceId)
-        val target = room ?: return
-        runCatching { client.setRoomOrEach(target.id, target.lightIds, attributes) }
+        runCatching { client.setDevice(lightId, attributes) }
         delay(700)
         WidgetUpdater.refresh(context)
     }
 }
 
-class ToggleRoomAction : ActionCallback {
+class ToggleLightAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val on = parameters[ToggleableStateKey] ?: return
-        RoomAction.run(context, glanceId, parameters[RoomAction.ROOM] ?: return, buildJsonObject { put("isOn", on) }) {
-            it.copy(anyOn = on)
+        LightAction.run(context, glanceId, parameters[LightAction.LIGHT] ?: return, buildJsonObject { put("isOn", on) }) {
+            it.copy(on = on)
         }
     }
 }
 
-class AdjustRoomAction : ActionCallback {
+class AdjustLightAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val value = parameters[VALUE] ?: return
         val attributes = buildJsonObject {
@@ -574,7 +578,7 @@ class AdjustRoomAction : ActionCallback {
                 else -> return
             }
         }
-        RoomAction.run(context, glanceId, parameters[RoomAction.ROOM] ?: return, attributes) {
+        LightAction.run(context, glanceId, parameters[LightAction.LIGHT] ?: return, attributes) {
             if (parameters[KIND] == "level") it.copy(level = value) else it
         }
     }

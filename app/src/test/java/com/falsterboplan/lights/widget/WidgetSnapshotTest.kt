@@ -12,44 +12,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetSnapshotTest {
-    private fun light(id: String, room: Room?, on: Boolean, level: Int?, caps: List<String>, min: Int? = null, max: Int? = null, reach: Boolean = true) =
-        Device(id, "light", "light", reach, Attributes(isOn = on, lightLevel = level, colorTemperatureMin = min, colorTemperatureMax = max), Capabilities(caps), room)
+    private fun light(id: String, name: String, room: Room?, on: Boolean, level: Int?, caps: List<String>, min: Int? = null, max: Int? = null, reach: Boolean = true) =
+        Device(id, "light", "light", reach, Attributes(customName = name, isOn = on, lightLevel = level, colorTemperatureMin = min, colorTemperatureMax = max), Capabilities(caps), room)
 
-    private val living = Room("r1", "Living room")
+    private val living = Room("r1", "Vardagsrum")
+    private val bedroom = Room("r2", "Sovrum")
     private val dim = listOf("isOn", "lightLevel")
 
     @Test
-    fun summarisesEachRoomForTheWidget() {
+    fun listsEveryLampGroupedByRoomThenName() {
         val snapshot = WidgetSnapshot.of(
             listOf(
-                light("a", living, true, 80, dim + "colorTemperature" + "colorHue", min = 4000, max = 2202),
-                light("b", living, true, 40, dim + "colorTemperature", min = 4000, max = 2700),
-                light("c", living, false, 10, dim),
-                light("gone", living, true, 100, dim, reach = false),
-                light("plug", null, false, null, listOf("isOn")),
+                light("plug", "Lös lampa", null, false, null, listOf("isOn")),
+                light("b", "Soffa", living, true, 40, dim + "colorTemperature" + "colorHue", min = 4000, max = 2202),
+                light("a", "Fönster", living, false, 10, dim),
+                light("gone", "Säng", bedroom, true, 100, dim, reach = false),
             ),
         )
-        val (room, other) = snapshot.rooms
-        assertEquals("Living room", room.name)
-        assertEquals(listOf("a", "b", "c"), room.lightIds)
-        assertTrue(room.anyOn)
-        assertEquals(60, room.level) // average of the lights that are on
-        assertEquals(2700, room.warmK) // a range every tunable light accepts
-        assertEquals(4000, room.coolK)
-        assertTrue(room.hasColor)
+        assertEquals(listOf("Säng", "Fönster", "Soffa", "Lös lampa"), snapshot.lights.map { it.name })
 
-        assertEquals("Övriga lampor", other.name)
-        assertEquals(WidgetRoom.OTHER, other.key)
-        assertFalse(other.anyOn)
-        assertNull(other.level)
-        assertNull(other.warmK)
+        val sofa = snapshot.lights[2]
+        assertEquals("Vardagsrum", sofa.room)
+        assertTrue(sofa.on)
+        assertEquals(40, sofa.level)
+        assertEquals(2202, sofa.warmK)
+        assertEquals(4000, sofa.coolK)
+        assertTrue(sofa.hasColor)
+
+        val window = snapshot.lights[1]
+        assertFalse(window.on)
+        assertNull(window.warmK)
+        assertFalse(window.hasColor)
+
+        // A lamp the hub can't reach is listed, but never as on.
+        val bed = snapshot.lights[0]
+        assertFalse(bed.reachable)
+        assertFalse(bed.on)
+
+        val loose = snapshot.lights[3]
+        assertEquals("", loose.room)
+        assertNull(loose.level)
     }
 
     @Test
     fun readsSnapshotsSavedByOlderVersions() {
+        // Before the widget listed lamps it stored rooms; that must not crash, just show nothing until refreshed.
         val old = """{"paired":true,"rooms":[{"id":"r1","name":"Living room","lightIds":["a"],"anyOn":true,"onCount":1}]}"""
-        val room = HubJson.decodeFromString<WidgetSnapshot>(old).rooms.single()
-        assertNull(room.level)
-        assertFalse(room.hasColor)
+        val snapshot = HubJson.decodeFromString<WidgetSnapshot>(old)
+        assertTrue(snapshot.paired)
+        assertTrue(snapshot.lights.isEmpty())
     }
 }

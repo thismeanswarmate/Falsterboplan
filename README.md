@@ -33,7 +33,7 @@ händelse" hands over to the phone's calendar app.
 
 **Vacuum tab (Dammsugare)**: a disabled placeholder.
 
-**Home screen widget**: lights per room with brightness steps and warmth/colour swatches, and the
+**Home screen widget**: every lamp with a switch, brightness steps and warmth/colour swatches, and the
 to-buy list.
 
 **Google sign-in**: required before the app or widget can be used (sign out from the menu).
