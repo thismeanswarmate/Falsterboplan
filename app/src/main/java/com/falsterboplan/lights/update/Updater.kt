@@ -57,6 +57,9 @@ object Updater {
     val state: StateFlow<UpdateState> = mutable
 
     private const val CHANNEL = "updates"
+
+    /** True from tapping "Slå på" until App Distribution reports how the sign-in went. */
+    @Volatile private var enabling = false
     private const val WORK = "update-check"
 
     private fun service(context: Context): FirebaseAppDistribution? =
@@ -80,7 +83,8 @@ object Updater {
         if (mutable.value is UpdateState.Downloading || mutable.value is UpdateState.Installing) return
         val distribution = service(context) ?: return
         if (!distribution.isTesterSignedIn) {
-            mutable.value = UpdateState.NotEnabled
+            // While switching on is under way, or has just failed with a reason, leave that on screen.
+            if (!enabling && mutable.value !is UpdateState.Failed) mutable.value = UpdateState.NotEnabled
             return
         }
         var problem: Exception? = null
@@ -98,7 +102,12 @@ object Updater {
     suspend fun enable(context: Context) {
         val distribution = service(context) ?: return
         var problem: Exception? = null
-        distribution.signInTester().result { problem = it }
+        enabling = true
+        try {
+            distribution.signInTester().result { problem = it }
+        } finally {
+            enabling = false
+        }
         if (distribution.isTesterSignedIn) {
             check(context, reportFailure = true)
         } else {

@@ -240,7 +240,7 @@ private fun UpdateBanner() {
             when (current) {
                 UpdateState.NotEnabled -> TextButton(onClick = { scope.launch { Updater.enable(context) } }) { Text("Slå på", color = Brand.Ink) }
                 is UpdateState.Available -> TextButton(onClick = { Updater.install(context) }) { Text("Uppdatera", color = Brand.Ink) }
-                is UpdateState.Failed -> TextButton(onClick = { scope.launch { Updater.check(context, reportFailure = true) } }) { Text("Försök igen", color = Brand.Ink) }
+                is UpdateState.Failed -> TextButton(onClick = { scope.launch { Updater.enable(context) } }) { Text("Försök igen", color = Brand.Ink) }
                 else -> Unit
             }
         }
