@@ -24,6 +24,7 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appdistribution.AppDistributionRelease
 import com.google.firebase.appdistribution.FirebaseAppDistribution
+import com.google.firebase.appdistribution.FirebaseAppDistributionException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -71,25 +72,44 @@ object Updater {
 
     private fun AppDistributionRelease.toRelease() = Release(versionCode, displayVersion, releaseNotes.orEmpty())
 
-    /** Looks for a newer build and shows the outcome in [state]. */
-    suspend fun check(context: Context) {
+    /**
+     * Looks for a newer build and shows the outcome in [state]. A failed check is normally not
+     * worth a banner (the phone may just be offline); with [reportFailure] the reason is shown.
+     */
+    suspend fun check(context: Context, reportFailure: Boolean = false) {
         if (mutable.value is UpdateState.Downloading || mutable.value is UpdateState.Installing) return
         val distribution = service(context) ?: return
         if (!distribution.isTesterSignedIn) {
             mutable.value = UpdateState.NotEnabled
             return
         }
-        // A failed check (say, offline) is not worth a banner; the next one will tell.
-        val newer = distribution.checkForNewRelease().result()
-        mutable.value = if (newer != null) UpdateState.Available(newer.toRelease()) else UpdateState.None
+        var problem: Exception? = null
+        val newer = distribution.checkForNewRelease().result { problem = it }
+        mutable.value = when {
+            newer != null -> UpdateState.Available(newer.toRelease())
+            problem != null && reportFailure -> UpdateState.Failed(describe(problem))
+            // Keep a reported failure on screen rather than wiping it on the next quiet check.
+            problem != null && mutable.value is UpdateState.Failed -> mutable.value
+            else -> UpdateState.None
+        }
     }
 
     /** The one-time step: App Distribution opens a Google sign-in to recognise this person as invited. */
     suspend fun enable(context: Context) {
         val distribution = service(context) ?: return
-        var problem: String? = null
-        distribution.signInTester().result { problem = it.message }
-        if (distribution.isTesterSignedIn) check(context) else mutable.value = UpdateState.Failed(problem ?: "Inloggningen avbröts.")
+        var problem: Exception? = null
+        distribution.signInTester().result { problem = it }
+        if (distribution.isTesterSignedIn) {
+            check(context, reportFailure = true)
+        } else {
+            mutable.value = UpdateState.Failed(problem?.let(::describe) ?: "Inloggningen blev inte klar. Sidan i webbläsaren ska själv skicka dig tillbaka till appen.")
+        }
+    }
+
+    /** App Distribution's own reason, with its error code, so a problem can be told apart. */
+    private fun describe(e: Exception): String {
+        val code = (e as? FirebaseAppDistributionException)?.errorCode?.name
+        return listOfNotNull(e.message, code?.let { "($it)" }).joinToString(" ").ifBlank { "okänt fel" }
     }
 
     /** Downloads the newest build and hands it to Android to install. */

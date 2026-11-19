@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.falsterboplan.lights.R
 import com.falsterboplan.lights.update.UpdateState
@@ -184,7 +185,12 @@ private fun UpdateBanner() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val update by Updater.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { Updater.check(context) }
+    // Check every time the app comes to the front: on opening, and on coming back from the
+    // browser after switching updates on.
+    LifecycleResumeEffect(Unit) {
+        val job = scope.launch { Updater.check(context) }
+        onPauseOrDispose { job.cancel() }
+    }
 
     // "New version" notices need permission to notify; ask once.
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -226,7 +232,7 @@ private fun UpdateBanner() {
             when (current) {
                 UpdateState.NotEnabled -> TextButton(onClick = { scope.launch { Updater.enable(context) } }) { Text("Slå på", color = Brand.Ink) }
                 is UpdateState.Available -> TextButton(onClick = { Updater.install(context) }) { Text("Uppdatera", color = Brand.Ink) }
-                is UpdateState.Failed -> TextButton(onClick = { scope.launch { Updater.check(context) } }) { Text("Försök igen", color = Brand.Ink) }
+                is UpdateState.Failed -> TextButton(onClick = { scope.launch { Updater.check(context, reportFailure = true) } }) { Text("Försök igen", color = Brand.Ink) }
                 else -> Unit
             }
         }
