@@ -9,4 +9,3 @@ captures/
 *.keystore
 # The shared debug signing key is kept, so every build installs over the last one.
 !keystore/debug.keystore
-release-site/

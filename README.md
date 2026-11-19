@@ -59,17 +59,18 @@ every build installs over the previous one. Its SHA-1 is
 ## Releasing to everyone
 
 There is no app store involved. The workflow `.github/workflows/release.yml` ("Släpp ny
-version", run by hand from the Actions tab) builds the APK and
+version", run by hand from the Actions tab) builds the APK and uploads it to **Firebase App
+Distribution**, which e-mails the tester group (`hushall`).
 
-1. uploads it to **Firebase App Distribution**, which e-mails the tester group (`hushall`), and
-2. deploys it to **Firebase Hosting** with a `version.json`. The app reads that file when it
-   opens and twice a day in the background, shows "Ny version finns", and downloads and installs
-   the APK itself (`update/Updater.kt`).
+The app uses the App Distribution library (`update/Updater.kt`) to ask for newer builds when it
+opens and twice a day in the background, shows "Ny version finns", and downloads and installs
+the build. Each phone links to App Distribution once, with the Google account that was invited.
+Only invited testers can get the app. (Firebase Hosting was tried first as a plain download
+site, but the free plan does not allow app files there.)
 
 The version code is the number of git commits, so every commit is a newer version. The workflow
-needs the repository secret `FIREBASE_SERVICE_ACCOUNT` (a service-account JSON key allowed to
-deploy Hosting and upload to App Distribution). Note that the APK on Hosting can be downloaded by
-anyone who knows the address.
+needs the repository secret `FIREBASE_SERVICE_ACCOUNT`, a service-account JSON key allowed to
+upload to App Distribution.
 
 ## How it talks to the hub
 

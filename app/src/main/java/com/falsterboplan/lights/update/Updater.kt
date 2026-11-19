@@ -4,10 +4,8 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -20,123 +18,94 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.falsterboplan.lights.BuildConfig
 import com.falsterboplan.lights.MainActivity
 import com.falsterboplan.lights.R
-import com.falsterboplan.lights.data.HubJson
-import kotlinx.coroutines.Dispatchers
+import com.google.android.gms.tasks.Task
+import com.google.firebase.FirebaseApp
+import com.google.firebase.appdistribution.AppDistributionRelease
+import com.google.firebase.appdistribution.FirebaseAppDistribution
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import okhttp3.OkHttpClient
-import okhttp3.Request
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 
-/** What the download page says is the latest build: the contents of version.json. */
-@Serializable
-data class Release(
-    val versionCode: Int,
-    val versionName: String = "",
-    /** File name of the APK, next to version.json. */
-    val apk: String = "falsterboplan.apk",
-    val notes: String = "",
-)
-
-fun Release.isNewerThan(installed: Int) = versionCode > installed
+/** A newer build waiting in Firebase App Distribution. */
+data class Release(val versionCode: Long, val versionName: String, val notes: String)
 
 sealed interface UpdateState {
     data object None : UpdateState
+
+    /** This phone hasn't been linked to App Distribution yet, which is a one-time Google sign-in. */
+    data object NotEnabled : UpdateState
     data class Available(val release: Release) : UpdateState
     data class Downloading(val percent: Int) : UpdateState
 
-    /** Handed to Android, which installs it (and may ask for confirmation). */
+    /** Downloaded; Android is installing it and may ask for confirmation. */
     data object Installing : UpdateState
-    data class Failed(val release: Release, val reason: String) : UpdateState
+    data class Failed(val reason: String) : UpdateState
 }
 
 /**
- * Keeps the app up to date without an app store. The release workflow puts version.json and the
- * APK on the Firebase project's hosting site; the app compares that with its own version code.
- * Android only installs the download if it is signed with the same key as the installed app.
+ * Keeps the app up to date without an app store, through Firebase App Distribution: the release
+ * workflow uploads each build there, and the people invited as testers can fetch it. This object
+ * asks App Distribution for a newer build, and has it download and install one.
  */
 object Updater {
-    private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     private val mutable = MutableStateFlow<UpdateState>(UpdateState.None)
     val state: StateFlow<UpdateState> = mutable
 
     private const val CHANNEL = "updates"
     private const val WORK = "update-check"
 
-    /** Asks the download page for the latest release; null if it can't be reached or reads oddly. */
-    suspend fun latest(): Release? = withContext(Dispatchers.IO) {
-        runCatching {
-            http.newCall(Request.Builder().url(BuildConfig.UPDATE_URL + "version.json").build()).execute().use { response ->
-                if (!response.isSuccessful) null else HubJson.decodeFromString<Release>(response.body!!.string())
-            }
-        }.getOrNull()
-    }
+    private fun service(context: Context): FirebaseAppDistribution? =
+        runCatching { if (FirebaseApp.getApps(context).isEmpty()) null else FirebaseAppDistribution.getInstance() }.getOrNull()
 
-    /** Looks for a newer build and shows it in [state]. */
-    suspend fun check() {
-        if (mutable.value is UpdateState.Downloading || mutable.value is UpdateState.Installing) return
-        val release = latest() ?: return
-        mutable.value = if (release.isNewerThan(BuildConfig.VERSION_CODE)) UpdateState.Available(release) else UpdateState.None
-    }
-
-    /** Downloads [release] straight into Android's installer and asks it to install. */
-    suspend fun install(context: Context, release: Release) {
-        val app = context.applicationContext
-        mutable.value = UpdateState.Downloading(0)
-        try {
-            withContext(Dispatchers.IO) {
-                val installer = app.packageManager.packageInstaller
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-                params.setAppPackageName(app.packageName)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    // Android may then skip its confirmation when the app updates itself.
-                    params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                }
-                val sessionId = installer.createSession(params)
-                installer.openSession(sessionId).use { session ->
-                    http.newCall(Request.Builder().url(BuildConfig.UPDATE_URL + release.apk).build()).execute().use { response ->
-                        if (!response.isSuccessful) error("Nedladdningen misslyckades (${response.code}).")
-                        val body = response.body!!
-                        val total = body.contentLength()
-                        session.openWrite("app.apk", 0, total).use { out ->
-                            val buffer = ByteArray(64 * 1024)
-                            var done = 0L
-                            val input = body.byteStream()
-                            while (true) {
-                                val n = input.read(buffer)
-                                if (n < 0) break
-                                out.write(buffer, 0, n)
-                                done += n
-                                if (total > 0) mutable.value = UpdateState.Downloading((done * 100 / total).toInt())
-                            }
-                            session.fsync(out)
-                        }
-                    }
-                    val result = PendingIntent.getBroadcast(
-                        app,
-                        sessionId,
-                        Intent(app, InstallReceiver::class.java),
-                        // Android adds the outcome to the intent, so it must be mutable.
-                        PendingIntent.FLAG_UPDATE_CURRENT or
-                            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0),
-                    )
-                    session.commit(result.intentSender)
-                }
-            }
-            mutable.value = UpdateState.Installing
-        } catch (e: Exception) {
-            mutable.value = UpdateState.Failed(release, e.message ?: "okänt fel")
+    /** Waits for a Google Play services task; null with the failure passed to [onError] if it fails. */
+    private suspend fun <T> Task<T>.result(onError: (Exception) -> Unit = {}): T? = suspendCancellableCoroutine { continuation ->
+        addOnCompleteListener { task ->
+            if (!task.isSuccessful) task.exception?.let(onError)
+            continuation.resume(if (task.isSuccessful) task.result else null)
         }
     }
 
-    internal fun failed(reason: String) {
-        val release = (mutable.value as? UpdateState.Available)?.release ?: Release(0)
-        mutable.value = UpdateState.Failed(release, reason)
+    private fun AppDistributionRelease.toRelease() = Release(versionCode, displayVersion, releaseNotes.orEmpty())
+
+    /** Looks for a newer build and shows the outcome in [state]. */
+    suspend fun check(context: Context) {
+        if (mutable.value is UpdateState.Downloading || mutable.value is UpdateState.Installing) return
+        val distribution = service(context) ?: return
+        if (!distribution.isTesterSignedIn) {
+            mutable.value = UpdateState.NotEnabled
+            return
+        }
+        // A failed check (say, offline) is not worth a banner; the next one will tell.
+        val newer = distribution.checkForNewRelease().result()
+        mutable.value = if (newer != null) UpdateState.Available(newer.toRelease()) else UpdateState.None
+    }
+
+    /** The one-time step: App Distribution opens a Google sign-in to recognise this person as invited. */
+    suspend fun enable(context: Context) {
+        val distribution = service(context) ?: return
+        var problem: String? = null
+        distribution.signInTester().result { problem = it.message }
+        if (distribution.isTesterSignedIn) check(context) else mutable.value = UpdateState.Failed(problem ?: "Inloggningen avbröts.")
+    }
+
+    /** Downloads the newest build and hands it to Android to install. */
+    fun install(context: Context) {
+        val distribution = service(context) ?: return
+        mutable.value = UpdateState.Downloading(0)
+        distribution.updateApp()
+            .addOnProgressListener { progress ->
+                val total = progress.apkFileTotalBytes
+                mutable.value = if (total > 0 && progress.apkBytesDownloaded < total) {
+                    UpdateState.Downloading((progress.apkBytesDownloaded * 100 / total).toInt())
+                } else {
+                    UpdateState.Installing
+                }
+            }
+            .addOnFailureListener { mutable.value = UpdateState.Failed(it.message ?: "okänt fel") }
     }
 
     /** Checks twice a day in the background, so a notification can announce a new version. */
@@ -150,10 +119,17 @@ object Updater {
         )
     }
 
+    internal suspend fun checkInBackground(context: Context) {
+        val distribution = service(context) ?: return
+        if (!distribution.isTesterSignedIn) return
+        val newer = distribution.checkForNewRelease().result() ?: return
+        announce(context, newer.toRelease())
+    }
+
     /** Notifies about [release] once; later checks stay quiet until there is an even newer one. */
-    internal fun announce(context: Context, release: Release) {
+    private fun announce(context: Context, release: Release) {
         val prefs = context.getSharedPreferences("update", Context.MODE_PRIVATE)
-        if (prefs.getInt("announced", 0) >= release.versionCode) return
+        if (prefs.getLong("announcedCode", 0) >= release.versionCode) return
         val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         if (!granted) return
@@ -172,30 +148,13 @@ object Updater {
                 .setAutoCancel(true)
                 .build(),
         )
-        prefs.edit().putInt("announced", release.versionCode).apply()
+        prefs.edit().putLong("announcedCode", release.versionCode).apply()
     }
 }
 
 class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val release = Updater.latest()
-        if (release != null && release.isNewerThan(BuildConfig.VERSION_CODE)) Updater.announce(applicationContext, release)
+        runCatching { Updater.checkInBackground(applicationContext) }
         return Result.success()
-    }
-}
-
-/** Hears back from Android's installer about an update this app asked for. */
-class InstallReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                // Android wants the person to confirm; show its own dialog.
-                @Suppress("DEPRECATION")
-                val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
-                runCatching { context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            }
-            PackageInstaller.STATUS_SUCCESS -> Unit // the app is restarted in its new version
-            else -> Updater.failed(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Installationen avbröts.")
-        }
     }
 }

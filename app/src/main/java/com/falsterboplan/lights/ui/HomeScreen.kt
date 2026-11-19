@@ -178,13 +178,13 @@ fun HomeScreen(
     }
 }
 
-/** Appears above every tab when a newer build is on the download page. */
+/** Appears above every tab when a newer build is waiting, or when updates haven't been switched on yet. */
 @Composable
 private fun UpdateBanner() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val update by Updater.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { Updater.check() }
+    LaunchedEffect(Unit) { Updater.check(context) }
 
     // "New version" notices need permission to notify; ask once.
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -205,13 +205,17 @@ private fun UpdateBanner() {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 when (current) {
+                    UpdateState.NotEnabled -> {
+                        Text("Slå på uppdateringar", style = MaterialTheme.typography.titleMedium)
+                        Text("Logga in en gång med Google-kontot du blev inbjuden med, så hämtar appen nya versioner själv.", style = MaterialTheme.typography.bodySmall)
+                    }
                     is UpdateState.Available -> {
                         Text("Ny version finns", style = MaterialTheme.typography.titleMedium)
                         val detail = listOf(current.release.versionName, current.release.notes).filter { it.isNotBlank() }.joinToString(" · ")
                         if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 3)
                     }
                     is UpdateState.Downloading -> Text("Hämtar uppdateringen… ${current.percent} %", style = MaterialTheme.typography.titleMedium)
-                    UpdateState.Installing -> Text("Installerar… Android kan be dig bekräfta.", style = MaterialTheme.typography.titleMedium)
+                    UpdateState.Installing -> Text("Installerar… Android ber dig bekräfta.", style = MaterialTheme.typography.titleMedium)
                     is UpdateState.Failed -> {
                         Text("Uppdateringen gick inte igenom", style = MaterialTheme.typography.titleMedium)
                         Text(current.reason, style = MaterialTheme.typography.bodySmall)
@@ -219,11 +223,11 @@ private fun UpdateBanner() {
                     UpdateState.None -> Unit
                 }
             }
-            val release = (current as? UpdateState.Available)?.release ?: (current as? UpdateState.Failed)?.release
-            if (release != null && release.versionCode > 0) {
-                TextButton(onClick = { scope.launch { Updater.install(context, release) } }) {
-                    Text(if (current is UpdateState.Failed) "Försök igen" else "Uppdatera", color = Brand.Ink)
-                }
+            when (current) {
+                UpdateState.NotEnabled -> TextButton(onClick = { scope.launch { Updater.enable(context) } }) { Text("Slå på", color = Brand.Ink) }
+                is UpdateState.Available -> TextButton(onClick = { Updater.install(context) }) { Text("Uppdatera", color = Brand.Ink) }
+                is UpdateState.Failed -> TextButton(onClick = { scope.launch { Updater.check(context) } }) { Text("Försök igen", color = Brand.Ink) }
+                else -> Unit
             }
         }
     }

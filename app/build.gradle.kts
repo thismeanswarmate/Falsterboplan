@@ -25,8 +25,6 @@ android {
         targetSdk = 36
         versionCode = commitCount
         versionName = "1.$commitCount"
-        // Where the in-app updater looks for a newer build (Firebase Hosting, filled by the release workflow).
-        buildConfigField("String", "UPDATE_URL", "\"https://falsterboplan-6b048.web.app/\"")
     }
 
     signingConfigs {
@@ -80,6 +78,8 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    // In-app updates for invited testers: finds, downloads and installs newer builds.
+    implementation("com.google.firebase:firebase-appdistribution:16.0.0-beta14")
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
