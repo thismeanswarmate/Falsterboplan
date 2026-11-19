@@ -27,7 +27,8 @@ Firestore must be created in the Firebase console, with rules that require sign-
 
 **Calendar tab (Kalender)**: day or week view of the calendars Android already syncs to the phone
 (a Google account's calendars, including shared ones), read through the system calendar provider
-with the READ_CALENDAR permission. Choose which calendars to show; tapping an event or "Ny
+with the READ_CALENDAR permission. The household's shared Google calendar (`HOME_CALENDAR` in `data/CalendarRepo.kt`) is shown by default when the
+phone has it; otherwise the tab offers a link to add it. Choose which calendars to show; tapping an event or "Ny
 händelse" hands over to the phone's calendar app.
 
 **Vacuum tab (Dammsugare)**: a disabled placeholder.

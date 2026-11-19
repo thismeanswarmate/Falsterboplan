@@ -9,7 +9,24 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 /** A calendar that an account on this phone syncs, for example a Google calendar. */
-data class DeviceCalendar(val id: Long, val name: String, val account: String, val google: Boolean, val color: Int)
+data class DeviceCalendar(
+    val id: Long,
+    val name: String,
+    val account: String,
+    val google: Boolean,
+    val color: Int,
+    /** The calendar's own address, e.g. "…@group.calendar.google.com" for a shared Google calendar. */
+    val owner: String = "",
+) {
+    val isHome get() = owner.equals(HOME_CALENDAR, ignoreCase = true)
+}
+
+/** The household's shared Google calendar, which the tab shows unless someone picks otherwise. */
+const val HOME_CALENDAR = "129323e325169e6f7aef42a3bba80b555e60962bdc203ed21466a34cbd19d3c9@group.calendar.google.com"
+
+/** Opening this in a browser offers to add the household calendar to the signed-in Google account. */
+const val HOME_CALENDAR_LINK =
+    "https://calendar.google.com/calendar/u/0?cid=MTI5MzIzZTMyNTE2OWU2ZjdhZWY0MmEzYmJhODBiNTU1ZTYwOTYyYmRjMjAzZWQyMTQ2NmEzNGNiZDE5ZDNjOUBncm91cC5jYWxlbmRhci5nb29nbGUuY29t"
 
 data class CalendarEvent(
     val eventId: Long,
@@ -45,6 +62,9 @@ fun eventsByDay(events: List<CalendarEvent>, from: LocalDate, days: Int, zone: Z
         }.sortedWith(compareBy({ !it.allDay }, { it.begin }, { it.title }))
     }
 
+fun defaultSelection(all: List<DeviceCalendar>): Set<Long> =
+    (all.filter { it.isHome }.ifEmpty { all.filter { it.google } }.ifEmpty { all }).map { it.id }.toSet()
+
 /**
  * Reads the calendars Android already keeps in sync on this phone. A Google account added to the
  * phone brings its calendars (including ones shared with it) along, so no separate Google login or
@@ -60,6 +80,7 @@ class CalendarRepo(private val context: Context) {
             CalendarContract.Calendars.ACCOUNT_NAME,
             CalendarContract.Calendars.ACCOUNT_TYPE,
             CalendarContract.Calendars.CALENDAR_COLOR,
+            CalendarContract.Calendars.OWNER_ACCOUNT,
         )
         val found = mutableListOf<DeviceCalendar>()
         context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, columns, null, null, null)?.use { c ->
@@ -70,17 +91,20 @@ class CalendarRepo(private val context: Context) {
                     account = c.getString(2).orEmpty(),
                     google = c.getString(3) == "com.google",
                     color = c.getInt(4),
+                    owner = c.getString(5).orEmpty(),
                 )
             }
         }
-        return found.sortedWith(compareBy({ !it.google }, { it.account }, { it.name.lowercase() }))
+        return found.sortedWith(compareBy({ !it.isHome }, { !it.google }, { it.account }, { it.name.lowercase() }))
     }
 
-    /** The calendars to show. Until a choice is made: every Google calendar, or all if there are none. */
+    /**
+     * The calendars to show. Until a choice is made: the household calendar alone if the phone has
+     * it, otherwise every Google calendar, or all calendars if there are none of those.
+     */
     fun selected(all: List<DeviceCalendar>): Set<Long> {
         val saved = prefs.getStringSet("selected", null)?.mapNotNull { it.toLongOrNull() }?.toSet()
-        if (saved != null) return saved intersect all.map { it.id }.toSet()
-        return (all.filter { it.google }.ifEmpty { all }).map { it.id }.toSet()
+        return if (saved != null) saved intersect all.map { it.id }.toSet() else defaultSelection(all)
     }
 
     fun select(ids: Set<Long>) = prefs.edit().putStringSet("selected", ids.map { it.toString() }.toSet()).apply()

@@ -38,4 +38,14 @@ class CalendarTest {
         assertEquals(emptyList<String>(), week[monday.plusDays(4)])
         assertEquals(7, week.size)
     }
+
+    @Test
+    fun householdCalendarIsShownAloneWhenThePhoneHasIt() {
+        val own = DeviceCalendar(1, "Johannes", "a@gmail.com", true, 0, owner = "a@gmail.com")
+        val home = DeviceCalendar(2, "Falsterboplan", "a@gmail.com", true, 0, owner = HOME_CALENDAR.uppercase())
+        val local = DeviceCalendar(3, "Telefon", "local", false, 0)
+        assertEquals(setOf(2L), defaultSelection(listOf(own, home, local)))
+        assertEquals(setOf(1L), defaultSelection(listOf(own, local)))
+        assertEquals(setOf(3L), defaultSelection(listOf(local)))
+    }
 }

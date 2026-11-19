@@ -39,6 +39,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -69,6 +70,7 @@ import androidx.core.content.ContextCompat
 import com.falsterboplan.lights.data.CalendarEvent
 import com.falsterboplan.lights.data.CalendarRepo
 import com.falsterboplan.lights.data.DeviceCalendar
+import com.falsterboplan.lights.data.HOME_CALENDAR_LINK
 import com.falsterboplan.lights.data.eventsByDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -163,6 +165,8 @@ fun CalendarTab() {
         today = LocalDate.now(),
         byDay = byDay,
         hasCalendars = calendars.isNotEmpty(),
+        missingHome = byDay != null && calendars.none { it.isHome },
+        onAddHome = { openLink(context, HOME_CALENDAR_LINK) },
         zone = zone,
         onWeek = { week = it },
         onMove = { epochDay = date.plusDays(it * days.toLong()).toEpochDay() },
@@ -183,6 +187,9 @@ fun CalendarContent(
     byDay: Map<LocalDate, List<CalendarEvent>>?,
     hasCalendars: Boolean,
     zone: ZoneId,
+    /** The household's shared calendar isn't on this phone (yet). */
+    missingHome: Boolean = false,
+    onAddHome: () -> Unit = {},
     onWeek: (Boolean) -> Unit,
     onMove: (Int) -> Unit,
     onToday: () -> Unit,
@@ -233,6 +240,20 @@ fun CalendarContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            if (missingHome) {
+                item(key = "home") {
+                    Card(colors = CardDefaults.cardColors(containerColor = Brand.Mint), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Hushållets kalender finns inte på mobilen", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Lägg till den i ditt Google-konto. När mobilen har synkat visas den här av sig själv.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            TextButton(onClick = onAddHome) { Text("Lägg till kalendern", color = Brand.Ink) }
+                        }
+                    }
+                }
+            }
             when {
                 byDay == null -> item { Quiet("Hämtar kalendern…") }
                 !hasCalendars -> item {
@@ -325,7 +346,11 @@ private fun CalendarChooser(all: List<DeviceCalendar>, selected: Set<Long>, onDi
                         Checkbox(checked = checked, onCheckedChange = null)
                         Box(Modifier.padding(start = 12.dp).size(12.dp).background(Color(calendar.color).copy(alpha = 1f), CircleShape))
                         Column(Modifier.padding(start = 10.dp)) {
-                            Text(calendar.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                            Text(
+                                calendar.name + if (calendar.isHome) " (hushållets)" else "",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
                             if (calendar.account != calendar.name) Text(calendar.account, style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -343,6 +368,13 @@ private fun openEvent(context: Context, event: CalendarEvent) {
         .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end)
     try {
         context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+    }
+}
+
+private fun openLink(context: Context, link: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(link)))
     } catch (_: ActivityNotFoundException) {
     }
 }
