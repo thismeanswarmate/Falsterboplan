@@ -70,6 +70,7 @@ import com.falsterboplan.lights.data.BuyItem
 import com.falsterboplan.lights.data.CATEGORIES
 import com.falsterboplan.lights.data.Priority
 import com.falsterboplan.lights.data.Shopping
+import com.falsterboplan.lights.data.SyncState
 import com.falsterboplan.lights.data.forDisplay
 import com.falsterboplan.lights.data.remembering
 import com.falsterboplan.lights.widget.LightsWidget
@@ -79,6 +80,7 @@ import kotlinx.coroutines.launch
 class ShoppingViewModel(app: Application) : AndroidViewModel(app) {
     val items: StateFlow<List<BuyItem>> = Shopping.items(app)
     val history: StateFlow<List<String>> = Shopping.history(app)
+    val sync: StateFlow<SyncState> = Shopping.sync
 
     private fun change(transform: (List<BuyItem>) -> List<BuyItem>) {
         Shopping.change(getApplication(), transform)
@@ -147,6 +149,19 @@ fun ShoppingTab(vm: ShoppingViewModel) {
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item(key = "sync") {
+            val sync by vm.sync.collectAsStateWithLifecycle()
+            Text(
+                when (val s = sync) {
+                    SyncState.Shared -> "Listan delas med alla som är inloggade."
+                    SyncState.Local -> "Ansluter till den delade listan…"
+                    is SyncState.Failed -> "Delningen fungerar inte just nu, så ändringar sparas bara på den här mobilen. (${s.reason})"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (sync is SyncState.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
         item(key = "add") {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

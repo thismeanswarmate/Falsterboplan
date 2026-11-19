@@ -36,6 +36,7 @@ import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
@@ -177,6 +178,8 @@ class LightsWidget : GlanceAppWidget() {
     override val stateDefinition = PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        // Redraw placed widgets when someone else changes the shared list.
+        Shopping.onRemoteChange = { app -> CoroutineScope(Dispatchers.Default).launch { runCatching { LightsWidget().updateAll(app) } } }
         val shopping = Shopping.items(context)
         provideContent {
             val prefs = currentState<Preferences>()

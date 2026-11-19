@@ -20,7 +20,15 @@ The app's interface is in Swedish throughout.
   were on when it left. "Home" means the hub answers, so no location permission is used
 
 **To buy tab (Att köpa)**: priority, quantity, category and note per item; tick off when bought;
-bought items are remembered as "buy again" suggestions. Stored on the phone.
+bought items are remembered as "buy again" suggestions. The list is shared: it lives in the
+Firebase project's Firestore database (collection `shopping`, plus `shoppingMeta/history`), so
+every signed-in phone sees the same list live. A copy is kept on the phone for offline use.
+Firestore must be created in the Firebase console, with rules that require sign-in.
+
+**Calendar tab (Kalender)**: day or week view of the calendars Android already syncs to the phone
+(a Google account's calendars, including shared ones), read through the system calendar provider
+with the READ_CALENDAR permission. Choose which calendars to show; tapping an event or "Ny
+händelse" hands over to the phone's calendar app.
 
 **Vacuum tab (Dammsugare)**: a disabled placeholder.
 

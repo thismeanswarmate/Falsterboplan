@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The Calendar tab shows the calendars already synced to the phone. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- Only for the "lights were left on" reminder. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Timers must fire on the minute. USE_EXACT_ALARM is granted automatically on Android 13+. -->

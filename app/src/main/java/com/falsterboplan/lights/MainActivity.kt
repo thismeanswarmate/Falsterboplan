@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.glance.appwidget.updateAll
 import com.falsterboplan.lights.auth.Auth
+import com.falsterboplan.lights.data.Shopping
 import com.falsterboplan.lights.ui.HomeScreen
 import com.falsterboplan.lights.ui.LoginScreen
 import com.falsterboplan.lights.widget.LightsWidget
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
                 if (!allowed) {
                     LoginScreen(onSignedIn = {
                         allowed = true
+                        Shopping.restart(applicationContext)
                         scope.launch { LightsWidget().updateAll(applicationContext) }
                     })
                 } else {
@@ -79,6 +81,7 @@ class MainActivity : ComponentActivity() {
                         onSignOut = {
                             Auth.signOut(this)
                             allowed = Auth.allowed(this)
+                            Shopping.restart(applicationContext)
                             scope.launch { LightsWidget().updateAll(applicationContext) }
                         },
                     )

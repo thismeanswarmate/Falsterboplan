@@ -37,4 +37,15 @@ class ShoppingTest {
 
         assertEquals(listOf("Bröd", "Mjölk", "Ägg"), listOf("mjölk", "Ägg").remembering(listOf("Bröd", "Mjölk")))
     }
+
+    @Test
+    fun itemsSurviveTheSharedDatabaseAndOddDocumentsAreTolerated() {
+        val item = BuyItem(1700000000000, "Glödlampor", Priority.HIGH, bought = true, quantity = 2, note = "E27", category = "Belysning")
+        assertEquals(item, itemOf("1700000000000", fieldsOf(item)))
+
+        // Written by an older or other client: numbers come back as Long, fields may be missing.
+        assertEquals(BuyItem(5, "Mjölk"), itemOf("5", mapOf("name" to "Mjölk", "quantity" to 1L, "priority" to "URGENT")))
+        assertEquals(null, itemOf("not-a-number", mapOf("name" to "x")))
+        assertEquals(null, itemOf("6", mapOf("name" to " ")))
+    }
 }

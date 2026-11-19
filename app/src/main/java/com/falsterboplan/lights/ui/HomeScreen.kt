@@ -54,7 +54,7 @@ fun HomeScreen(
     var tab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(requestedTab) {
         if (requestedTab != null) {
-            tab = requestedTab.coerceIn(0, 1)
+            tab = requestedTab.coerceIn(0, 2)
             onTabShown()
         }
     }
@@ -121,7 +121,7 @@ fun HomeScreen(
                 }
                 // Tabs are as wide as their words, so the longest ("Dammsugare") is never cut off on a narrow phone.
                 PrimaryScrollableTabRow(selectedTabIndex = tab, containerColor = Color.Transparent, edgePadding = 8.dp) {
-                    listOf("Lampor", if (toBuyCount > 0) "Att köpa ($toBuyCount)" else "Att köpa").forEachIndexed { index, title ->
+                    listOf("Lampor", if (toBuyCount > 0) "Att köpa ($toBuyCount)" else "Att köpa", "Kalender").forEachIndexed { index, title ->
                         Tab(
                             selected = tab == index,
                             onClick = { tab = index },
@@ -153,6 +153,7 @@ fun HomeScreen(
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
                 tab == 1 -> ShoppingTab(shopping)
+                tab == 2 -> CalendarTab()
                 state.paired -> LightsTab(state, vm)
                 else -> SetupContent(state, vm)
             }
