@@ -9,6 +9,12 @@ plugins {
 // still builds; the sign-in entry then explains that login isn't set up.
 if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
 
+// Every commit is a new version: the number of commits is the version code, so a later build
+// always counts as newer and the in-app updater can tell them apart. Needs the full git history.
+val commitCount: Int = runCatching {
+    providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }.standardOutput.asText.get().trim().toInt()
+}.getOrDefault(1)
+
 android {
     namespace = "com.falsterboplan.lights"
     compileSdk = 36
@@ -17,8 +23,10 @@ android {
         applicationId = "com.falsterboplan.lights"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = commitCount
+        versionName = "1.$commitCount"
+        // Where the in-app updater looks for a newer build (Firebase Hosting, filled by the release workflow).
+        buildConfigField("String", "UPDATE_URL", "\"https://falsterboplan-6b048.web.app/\"")
     }
 
     signingConfigs {
@@ -49,6 +57,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

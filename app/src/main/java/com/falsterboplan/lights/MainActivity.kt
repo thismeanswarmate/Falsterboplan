@@ -16,6 +16,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.falsterboplan.lights.presence.Presence
+import com.falsterboplan.lights.update.Updater
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.glance.appwidget.updateAll
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) readTab(intent)
         // Re-arm the home/away checks; the Wi-Fi watch is dropped when the app is updated.
         Presence.apply(this)
+        Updater.schedule(this)
         // The app is always cream, so system bar icons must stay dark even when the phone is in dark mode.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),

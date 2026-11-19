@@ -6,7 +6,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- The Calendar tab shows the calendars already synced to the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
-    <!-- Only for the "lights were left on" reminder. -->
+    <!-- The app updates itself from the household's own download page, not from an app store. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- For the "lights were left on" reminder and "new version" notices. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Timers must fire on the minute. USE_EXACT_ALARM is granted automatically on Android 13+. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
@@ -46,6 +49,10 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/lights_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".update.InstallReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".presence.PresenceReceiver"

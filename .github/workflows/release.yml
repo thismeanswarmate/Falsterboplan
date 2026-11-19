@@ -1,0 +1,80 @@
+# Publishes the app to everyone who has it, without an app store.
+#
+# Run it by hand: GitHub > Actions > "Släpp ny version" > Run workflow.
+#
+# It builds the APK and then
+#   1. uploads it to Firebase App Distribution, which e-mails the tester group, and
+#   2. puts it on Firebase Hosting together with version.json, which is what the
+#      app itself checks to show "Ny version finns".
+#
+# Needs one repository secret, FIREBASE_SERVICE_ACCOUNT: the JSON key of a Google
+# service account that may deploy Hosting and upload to App Distribution.
+name: Släpp ny version
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Vad är nytt? (visas i appen och i mejlet)"
+        required: false
+        default: ""
+      testers:
+        description: "Testgrupp i Firebase App Distribution"
+        required: false
+        default: "hushall"
+
+permissions:
+  contents: read
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIREBASE_PROJECT: falsterboplan-6b048
+      FIREBASE_APP_ID: "1:546450827322:android:f2217ddda46430f32cad03"
+      NOTES: ${{ inputs.notes }}
+      TESTERS: ${{ inputs.testers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the version number is the number of commits
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Testa och bygg
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Förbered nedladdningssidan
+        run: |
+          set -euo pipefail
+          code=$(git rev-list --count HEAD)
+          mkdir -p release-site
+          cp app/build/outputs/apk/debug/app-debug.apk release-site/falsterboplan.apk
+          # jq builds the JSON so that quotes or line breaks in the notes can't break the file.
+          jq -n --argjson code "$code" --arg name "1.$code" --arg notes "$NOTES" \
+            '{versionCode: $code, versionName: $name, apk: "falsterboplan.apk", notes: $notes}' > release-site/version.json
+          cat release-site/version.json
+          printf '<!doctype html><meta charset="utf-8"><title>Falsterboplan</title><p>Falsterboplan %s</p>\n' "1.$code" > release-site/index.html
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Skicka till App Distribution
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${NOTES:-Ny version}" > notes.txt
+          npx --yes firebase-tools@13 appdistribution:distribute release-site/falsterboplan.apk \
+            --app "$FIREBASE_APP_ID" --project "$FIREBASE_PROJECT" \
+            --groups "$TESTERS" --release-notes-file notes.txt
+
+      - name: Lägg ut för appens egen uppdatering
+        run: npx --yes firebase-tools@13 deploy --only hosting --project "$FIREBASE_PROJECT" --non-interactive

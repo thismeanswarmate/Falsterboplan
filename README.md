@@ -56,6 +56,21 @@ Debug builds are signed with `keystore/debug.keystore`, which is kept in the rep
 every build installs over the previous one. Its SHA-1 is
 `C6:D4:6B:30:48:36:86:B8:F9:45:7B:77:B9:FE:08:24:AD:15:B5:77`.
 
+## Releasing to everyone
+
+There is no app store involved. The workflow `.github/workflows/release.yml` ("Släpp ny
+version", run by hand from the Actions tab) builds the APK and
+
+1. uploads it to **Firebase App Distribution**, which e-mails the tester group (`hushall`), and
+2. deploys it to **Firebase Hosting** with a `version.json`. The app reads that file when it
+   opens and twice a day in the background, shows "Ny version finns", and downloads and installs
+   the APK itself (`update/Updater.kt`).
+
+The version code is the number of git commits, so every commit is a newer version. The workflow
+needs the repository secret `FIREBASE_SERVICE_ACCOUNT` (a service-account JSON key allowed to
+deploy Hosting and upload to App Distribution). Note that the APK on Hosting can be downloaded by
+anyone who knows the address.
+
 ## How it talks to the hub
 
 `https://<hub>:8443/v1`, bearer token from a PKCE pairing flow (`data/DirigeraClient.kt`).

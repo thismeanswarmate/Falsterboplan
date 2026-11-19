@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "public": "release-site",
+    "ignore": ["firebase.json", "**/.*"],
+    "headers": [
+      {
+        "source": "version.json",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
+    ]
+  }
+}

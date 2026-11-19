@@ -37,6 +37,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.falsterboplan.lights.R
+import com.falsterboplan.lights.update.UpdateState
+import com.falsterboplan.lights.update.Updater
+import android.Manifest
+import android.content.Context
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 /** The app frame: house banner, the Lights and To buy tabs, and whichever tab is showing. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -150,12 +164,66 @@ fun HomeScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                tab == 1 -> ShoppingTab(shopping)
-                tab == 2 -> CalendarTab()
-                state.paired -> LightsTab(state, vm)
-                else -> SetupContent(state, vm)
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            UpdateBanner()
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    tab == 1 -> ShoppingTab(shopping)
+                    tab == 2 -> CalendarTab()
+                    state.paired -> LightsTab(state, vm)
+                    else -> SetupContent(state, vm)
+                }
+            }
+        }
+    }
+}
+
+/** Appears above every tab when a newer build is on the download page. */
+@Composable
+private fun UpdateBanner() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val update by Updater.state.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { Updater.check() }
+
+    // "New version" notices need permission to notify; ask once.
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("update", Context.MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !prefs.getBoolean("asked", false)) {
+            prefs.edit().putBoolean("asked", true).apply()
+            ask.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    val current = update
+    if (current is UpdateState.None) return
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Brand.Mint),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                when (current) {
+                    is UpdateState.Available -> {
+                        Text("Ny version finns", style = MaterialTheme.typography.titleMedium)
+                        val detail = listOf(current.release.versionName, current.release.notes).filter { it.isNotBlank() }.joinToString(" · ")
+                        if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                    }
+                    is UpdateState.Downloading -> Text("Hämtar uppdateringen… ${current.percent} %", style = MaterialTheme.typography.titleMedium)
+                    UpdateState.Installing -> Text("Installerar… Android kan be dig bekräfta.", style = MaterialTheme.typography.titleMedium)
+                    is UpdateState.Failed -> {
+                        Text("Uppdateringen gick inte igenom", style = MaterialTheme.typography.titleMedium)
+                        Text(current.reason, style = MaterialTheme.typography.bodySmall)
+                    }
+                    UpdateState.None -> Unit
+                }
+            }
+            val release = (current as? UpdateState.Available)?.release ?: (current as? UpdateState.Failed)?.release
+            if (release != null && release.versionCode > 0) {
+                TextButton(onClick = { scope.launch { Updater.install(context, release) } }) {
+                    Text(if (current is UpdateState.Failed) "Försök igen" else "Uppdatera", color = Brand.Ink)
+                }
             }
         }
     }
