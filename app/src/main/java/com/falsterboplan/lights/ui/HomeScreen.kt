@@ -37,6 +37,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.falsterboplan.lights.BuildConfig
 import com.falsterboplan.lights.R
 import com.falsterboplan.lights.update.UpdateState
 import com.falsterboplan.lights.update.Updater
@@ -108,6 +109,13 @@ fun HomeScreen(
                         painterResource(R.drawable.house),
                         contentDescription = "Falsterboplan",
                         modifier = Modifier.align(Alignment.Center).height(76.dp),
+                    )
+                    // Faint version number, to tell at a glance which build a phone is running.
+                    Text(
+                        BuildConfig.VERSION_NAME,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 4.dp),
                     )
                     Box(Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
                         var menu by remember { mutableStateOf(false) }

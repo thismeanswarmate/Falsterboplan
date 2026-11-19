@@ -80,6 +80,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     // In-app updates for invited testers: finds, downloads and installs newer builds.
     implementation("com.google.firebase:firebase-appdistribution:16.0.0-beta14")
+    implementation("androidx.appcompat:appcompat:1.7.0") // for the theme those screens need
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")

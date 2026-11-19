@@ -1,5 +1,7 @@
 <resources>
-    <style name="Theme.Falsterboplan" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- AppCompat-based because the update library's own screens (sign-in return, install) crash under
+         any other kind of theme. The app's own screens are drawn by Compose and only use the background. -->
+    <style name="Theme.Falsterboplan" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:windowBackground">@color/cream</item>
     </style>
 </resources>
